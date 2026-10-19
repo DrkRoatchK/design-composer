@@ -1,0 +1,1494 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design Composer</title>
+<!--
+  LYON SPARK · forma: composer (mecanismo v5 · orden E19: el Composer fácil · v4 en mecanismo_v4_respaldo.html)
+  E19: izquierda = capas (arriba) + LA COLUMNA (abajo) que cambian los botones Plantillas · Textos · Props · Imágenes (o el DAM en ventana flotante ⧉);
+       derecha = la pieza grande; arrastrar en la pieza (y del DAM a la pieza); deslizador de PROFUNDIDAD Z de la capa; subir tipografías (woff2/ttf/otf,
+       se quedan en esta compu); MOCKUP (MC-MOCKUP): laptop · celular · PC + una imagen, con giro e inclinación → capa o prop nuevo.
+       Zonas: lámina composer_hud › disposicion (si no viene, las de E5).
+  LEY + DATOS = ARTEFACTO. No trae datos ni marca propios. Dos maneras de hornearlo:
+    · manos/construir_composer.py  → mete la RAMA (tablas del Composer + catálogo del DAM + lámina del HUD) en el hueco de la rama:
+                                       abre sin servidor, en cualquier compu.
+    · manos/construir_cruce.py     → deja ese hueco sin llenar: la cara pide os_semilla.json al abrirse (como el v3).
+  El v3 queda en mecanismo_v3_respaldo.html. Lo que cambió (sin rehacer lo que ya servía):
+    1. el ÁRBOL ya no se rehace en cada cambio: es EL DISEÑO. Nace de una receta (plantilla o lienzo) y luego se edita
+       capa por capa (mover y escalar en la pieza, campos en la ficha, subir/bajar en Z, duplicar, quitar).
+    2. INVENTARIO del DAM por estantes (composer_estantes): Plantillas · Originales · Limpias · Editadas · Design · Corp ·
+       Publicidad · Props · Por clasificar. Toca un activo → su ficha flotante → «Poner en la pieza» (capa MC-IMAGEN).
+       También «Traer de tu compu» (la imagen viaja dentro del diseño).
+    3. GUARDAR / ABRIR el diseño como JSON local (liviano: el DAM por ruta · portátil: con las imágenes dentro) y un
+       autoguardado en este navegador. Karen revisa también lo que se abre.
+    4. PIEL de la lámina composer_hud: placa + nodos PNG en sus zonas %, con z. Sin piel, las mismas zonas acomodan la cara.
+    5. Teléfono (≤ 760 px): la pieza al centro y las ventanas como hojas que suben desde el dique de abajo.
+  El árbol tiene la forma de davar/ir.py (tag · text · role · classes · attrs · data · children · nid): fondo + capas,
+  data.z y data.caja en fracciones (LC-UNIDAD). manos/composer_arbol.py lee el mismo árbol (o el diseño guardado).
+  Obedece la ley de interfaz de la semilla: JG-* · RI-* · MV-* · ST-* · CP-0 piso · CP-1 pieza · CP-2 HUD · CP-4 ventanas · CP-6 aviso.
+-->
+<style>
+:root{
+  --bg-void:#0e1117;--bg-panel:#1b212c;--line:#2a3140;--txt:#ece7dc;--txt-dim:#8f97a6;
+  --blue:#d4b24c;--blue-glow:rgba(212,178,76,.35);--good:#37c7b5;--bad:#e2635c;
+  --c-std:cubic-bezier(.4,0,.2,1);--c-sal:cubic-bezier(0,0,.2,1);--c-ent:cubic-bezier(.4,0,1,1);--c-enf:cubic-bezier(.2,0,0,1);
+  --d-micro:90ms;--d-rap:140ms;--d-mod:200ms;--d-std:280ms;--d-del:420ms;
+  --mono:ui-monospace,'Cascadia Mono','SF Mono',Consolas,'DejaVu Sans Mono',monospace;
+  --disp:'Bahnschrift','DIN Alternate','Inter Display','Arial Narrow',system-ui,sans-serif;
+  --glifo:'Segoe UI Historic','Noto Sans Phoenician',system-ui,sans-serif;
+}
+
+:root{--acc:var(--blue);--acc-glow:var(--blue-glow);--ink:var(--bg-void);--crema:var(--txt);--panel:var(--bg-panel);--sombra:6px 6px 0 #000}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--ink);color:var(--crema);font:14px/1.4 system-ui,'Segoe UI',sans-serif;overflow:hidden;user-select:none}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input,textarea,select{font:inherit}
+:focus-visible{outline:3px solid var(--acc);outline-offset:3px}
+.g{font-family:var(--glifo)}
+kbd{font:800 11px var(--mono)}
+
+/* ── CP-0 · el mundo: placa del HUD (si la lámina está lista) o tinta con grano + piso ── */
+.app{position:fixed;inset:0;overflow:hidden}
+.app::before{content:'';position:absolute;inset:0;background:radial-gradient(circle,rgba(236,231,220,.05) 0 1.2px,transparent 1.6px) 0 0/22px 22px;pointer-events:none}
+.placa-hud{position:absolute;inset:0;background:center/100% 100% no-repeat;pointer-events:none}
+#nodosHud{position:absolute;inset:0;z-index:0;pointer-events:none}   /* CP-0: la piel queda debajo de las ventanas vivas */
+.nodo-hud{position:absolute;pointer-events:none;width:calc(var(--w)*1vw);height:calc(var(--h)*1vh);left:calc(var(--x)*1vw);top:calc(var(--y)*1vh)}
+.resplandor{position:absolute;inset:0;background:radial-gradient(ellipse 42% 50% at 50% 50%,color-mix(in srgb,var(--acc) 16%,transparent),transparent 70%);pointer-events:none}
+.piso{position:absolute;left:-20%;right:-20%;bottom:-160px;height:560px;pointer-events:none;
+  background:repeating-linear-gradient(90deg,color-mix(in srgb,var(--acc) 20%,transparent) 0 1px,transparent 1px 84px),
+             repeating-linear-gradient(0deg,color-mix(in srgb,var(--acc) 20%,transparent) 0 1px,transparent 1px 84px);
+  transform:perspective(620px) rotateX(72deg);transform-origin:50% 0;-webkit-mask:linear-gradient(transparent,#000 45%);mask:linear-gradient(transparent,#000 45%)}
+.con-piel .resplandor,.con-piel .piso,.con-piel.app::before{display:none}
+.agua{position:absolute;left:50%;top:46%;transform:translate(-50%,-56%) rotate(-8deg);font:900 clamp(70px,7.6vw,150px)/.82 var(--disp);font-stretch:condensed;
+  text-transform:uppercase;letter-spacing:-.03em;color:transparent;-webkit-text-stroke:2px color-mix(in srgb,var(--crema) 9%,transparent);white-space:nowrap;text-align:center;pointer-events:none}
+
+/* ── zonas: la lámina composer_hud dice dónde vive cada parte (x, y, w, h en % de la pantalla) ── */
+.zona{position:absolute;left:calc(var(--x)*1vw);top:calc(var(--y)*1vh);width:calc(var(--w)*1vw);height:calc(var(--h)*1vh)}
+#zCapas{--x:1.5;--y:2;--w:19;--h:40}
+#zInventario{--x:1.5;--y:44;--w:19;--h:54}
+#formatos{--x:24;--y:1.5;--w:52;--h:7}
+#mesa{--x:23;--y:11;--w:54;--h:66}
+#zTiempo{--x:30;--y:78.5;--w:40;--h:5}
+#zAcciones{--x:22;--y:86;--w:56;--h:11}
+#karenBox{--x:79;--y:2;--w:19.5;--h:22}
+#ficha{--x:79;--y:26;--w:19.5;--h:72}
+.panel{background:var(--panel);border:1px solid var(--line);clip-path:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px)}
+.con-piel .panel{background:color-mix(in srgb,var(--panel) 40%,transparent);border-color:transparent}
+.cab{font:800 10px var(--mono);letter-spacing:.24em;color:var(--txt-dim);display:flex;justify-content:space-between;align-items:center;gap:8px}
+.cerrar-hoja{display:none}
+
+/* ── CP-2 · título + capas (arriba a la izquierda) ─────────────────────── */
+#zCapas{display:flex;flex-direction:column;gap:10px;padding:14px 10px 10px 14px;overflow:hidden}
+.titulo{transform:rotate(-3deg);transform-origin:0 0}
+.titulo .rueda{display:inline-block;margin-right:6px;background:var(--acc);color:var(--ink);font:800 10px var(--mono);letter-spacing:.16em;padding:4px 8px;text-decoration:none}
+.titulo small{display:inline-block;background:var(--crema);color:var(--ink);font:800 10px var(--mono);letter-spacing:.14em;padding:4px 8px;text-transform:uppercase;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:top}
+.titulo h1{font:900 clamp(26px,2.6vw,46px)/.86 var(--disp);font-stretch:condensed;text-transform:uppercase;letter-spacing:-.02em;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.titulo h1 span{display:block;color:var(--acc)}
+.capas{display:flex;flex-direction:column;gap:5px;overflow:auto;min-height:0;flex:1;padding:2px 14px 6px 2px}
+.it{position:relative;display:flex;align-items:center;gap:10px;min-height:36px;padding:4px 14px 4px 10px;background:var(--panel);text-align:left;
+  clip-path:polygon(0 0,100% 6%,97% 100%,1.5% 94%);font:900 17px/1 var(--disp);font-stretch:condensed;text-transform:uppercase;
+  transition:transform var(--d-mod) var(--c-sal),background var(--d-micro),color var(--d-micro)}
+.it .g{width:22px;text-align:center;font-size:17px;color:var(--acc);flex:none}
+.it .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.it small{font:800 11px var(--mono);color:var(--txt-dim);flex:none}
+.it:hover{transform:translateX(5px)}
+.it.on{background:var(--crema);color:var(--ink);transform:translateX(12px) scale(1.03)}
+.it.on .g,.it.on small{color:var(--ink)}
+.it.mal{background:var(--bad);color:var(--crema)}.it.mal .g,.it.mal small{color:var(--crema)}
+.it.on.mal{background:var(--crema);color:var(--bad)}
+
+/* ── inventario del DAM (bolsa de RPG): estantes · buscador · rejilla ─── */
+#zInventario{display:flex;flex-direction:column;gap:8px;padding:14px 12px 12px}
+#zInventario .cab b{color:var(--acc)}
+.estantes{display:flex;flex-wrap:wrap;gap:5px}
+.est{height:28px;padding:0 9px;border-radius:8px;background:var(--ink);border:1px solid var(--line);font:800 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.est i{font-style:normal;color:var(--txt-dim);margin-left:5px}
+.est.on{background:var(--acc);color:var(--ink);border-color:var(--acc)}.est.on i{color:var(--ink)}
+.est.sin{opacity:.45}
+.busca{height:32px;border-radius:9px;border:1px solid var(--line);background:var(--ink);color:var(--crema);padding:0 10px;user-select:text}
+.rejas{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:8px;overflow:auto;min-height:0;flex:1;align-content:start;padding:2px 4px 4px 2px}
+.tile{position:relative;display:flex;flex-direction:column;gap:4px;padding:5px;border-radius:10px;background:var(--ink);border:1px solid var(--line);text-align:left;transition:transform var(--d-micro),border-color var(--d-micro)}
+.tile:hover{transform:translateY(-2px);border-color:var(--acc)}
+.tile .mini{aspect-ratio:1;border-radius:7px;background:#0a0c10 center/contain no-repeat;display:grid;place-items:center;overflow:hidden;
+  background-image:linear-gradient(45deg,#151a22 25%,transparent 25%,transparent 75%,#151a22 75%),linear-gradient(45deg,#151a22 25%,transparent 25%,transparent 75%,#151a22 75%);background-size:12px 12px;background-position:0 0,6px 6px}
+.tile .mini img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.tile .mini.falta{background:repeating-linear-gradient(-45deg,#1b212c 0 6px,#141922 6px 12px);font:800 9px var(--mono);color:var(--txt-dim);text-align:center;padding:4px;letter-spacing:.06em}
+.tile b{font:800 10px/1.15 system-ui,sans-serif;max-height:2.3em;overflow:hidden;word-break:break-word}
+.tile em{position:absolute;top:8px;left:8px;font:800 8px var(--mono);font-style:normal;background:var(--crema);color:var(--ink);padding:1px 4px;border-radius:3px;letter-spacing:.06em}
+.tile.traer .mini{background:var(--panel);border:2px dashed var(--acc);color:var(--acc);font:900 26px var(--disp)}
+.tile.plant .mini{background:none;display:flex;flex-direction:column;align-items:stretch;padding:6px;gap:3px}
+.tile.plant .mini i{flex:1;border-radius:4px}
+.nada{grid-column:1/-1;color:var(--txt-dim);font:600 12px system-ui;padding:10px 2px}
+
+/* ── formatos: riel arriba al centro (minimapa · Q / R) ───────────────── */
+#formatos{display:flex;align-items:center;gap:8px;overflow-x:auto;overflow-y:hidden;padding:0 6px;scrollbar-width:none}
+#formatos .q{width:26px;height:26px;flex:none;border-radius:50%;background:var(--crema);color:var(--ink);display:grid;place-items:center}
+.fm{display:flex;align-items:center;gap:7px;height:36px;flex:none;padding:0 11px;background:var(--panel);border-radius:11px;font:900 13px var(--disp);font-stretch:condensed;
+  text-transform:uppercase;transition:transform var(--d-mod) var(--c-sal)}
+.fm .marco{border:2px solid currentColor;border-radius:2px;opacity:.7}
+.fm:hover{transform:translateY(-2px)}
+.fm.on{background:var(--crema);color:var(--ink);transform:rotate(-4deg) translateY(-2px);box-shadow:4px 4px 0 #000}
+.fm.frena{background:var(--bad);color:var(--crema)}
+
+/* ── CP-1 · el escenario: pedestal + pila ─────────────────────────────── */
+.mesa .escena{position:absolute;inset:0;display:grid;place-items:center;perspective:1600px}
+.pedestal{position:absolute;left:50%;bottom:-20px;width:min(92%,560px);height:80px;transform:translateX(-50%);border-radius:50%;pointer-events:none;
+  border:2px solid color-mix(in srgb,var(--acc) 60%,transparent);box-shadow:0 0 60px var(--acc-glow),inset 0 0 40px var(--acc-glow);transition:opacity var(--d-std)}
+.pedestal::after{content:'';position:absolute;inset:14px 14%;border-radius:50%;border:1px dashed color-mix(in srgb,var(--crema) 40%,transparent)}
+.con-piel .pedestal{opacity:0}
+.explotada .pedestal{opacity:.35}
+.pila{position:relative;transform-style:preserve-3d;transition:transform var(--d-del) var(--c-enf);touch-action:none}
+.pila canvas{position:absolute;inset:0;width:100%;height:100%;border-radius:3px;cursor:pointer;transition:transform var(--d-del) var(--c-enf),opacity var(--d-std) var(--c-std),box-shadow var(--d-std) var(--c-std)}
+.pila canvas.fondo{box-shadow:0 50px 90px -30px #000,0 0 0 1px rgba(255,255,255,.08)}
+.pila.arrastra canvas{transition:none}
+.pila.arrastra{cursor:grabbing}
+.explotada .pila canvas:not(.fondo){background:color-mix(in srgb,var(--crema) 6%,transparent)}
+.pila .etq{position:absolute;left:100%;top:50%;width:1px;height:1px;pointer-events:none;transition:transform var(--d-del) var(--c-enf)}
+.marcas{position:absolute;inset:0;pointer-events:none;transform-style:preserve-3d;transition:transform var(--d-del) var(--c-enf)}
+.marcas div{position:absolute;border:2px dashed var(--acc);border-radius:4px;opacity:0;transition:opacity var(--d-rap)}
+.marcas div.on{opacity:1}
+.marcas div.mal{opacity:1;border-color:var(--bad);border-style:solid;background:repeating-linear-gradient(-45deg,rgba(226,99,92,.18) 0 6px,transparent 6px 12px)}
+.marcas .asa{display:none;position:absolute;right:-11px;bottom:-11px;width:22px;height:22px;background:var(--acc);border:3px solid var(--ink);transform:rotate(45deg);cursor:nwse-resize;pointer-events:auto;touch-action:none}
+.marcas div.on.mueve .asa{display:block}
+.explotada .marcas .asa{display:none!important}
+.reticula{position:absolute;inset:-12px;pointer-events:none}
+.reticula i{position:absolute;width:16px;height:16px;border:0 solid var(--acc)}
+.reticula i:nth-child(1){left:0;top:0;border-width:3px 0 0 3px}.reticula i:nth-child(2){right:0;top:0;border-width:3px 3px 0 0}
+.reticula i:nth-child(3){left:0;bottom:0;border-width:0 0 3px 3px}.reticula i:nth-child(4){right:0;bottom:0;border-width:0 3px 3px 0}
+.explotada .reticula{opacity:0}
+.corte{position:absolute;inset:-40%;pointer-events:none;z-index:5;display:none}
+.corte i{position:absolute;left:0;right:0;height:34%;top:33%;transform:rotate(-14deg) translateX(-130%)}
+.corte i:nth-child(1){background:var(--acc)}
+.corte i:nth-child(2){background:var(--crema);height:5%;top:62%}
+.corte.va{display:block}
+.corte.va i{animation:corte var(--d-del) var(--c-std) forwards}
+.corte.va i:nth-child(2){animation-delay:40ms}
+@keyframes corte{0%{transform:rotate(-14deg) translateX(-130%)}45%{transform:rotate(-14deg) translateX(0)}100%{transform:rotate(-14deg) translateX(130%)}}
+.llamadas{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity var(--d-std) var(--c-sal)}
+.explotada .llamadas{opacity:1;transition-delay:var(--d-rap)}
+.llamadas svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.llamadas path{fill:none;stroke:color-mix(in srgb,var(--crema) 45%,transparent);stroke-width:1.5}
+.llamadas circle{fill:var(--ink);stroke:var(--acc);stroke-width:2}
+.llamadas path.on{stroke:var(--acc)}.llamadas path.mal{stroke:var(--bad)}
+.llamada{position:absolute;display:flex;align-items:center;gap:8px;height:26px;padding:0 10px;background:var(--panel);font:900 13px var(--disp);font-stretch:condensed;
+  text-transform:uppercase;white-space:nowrap;transform:translateY(-50%) rotate(-3deg);clip-path:polygon(0 0,100% 8%,97% 100%,2% 92%)}
+.llamada span{font:800 11px var(--mono);color:var(--acc)}
+.llamada.on{background:var(--crema);color:var(--ink)}.llamada.on span{color:var(--ink)}
+.llamada.mal{background:var(--bad);color:var(--crema)}.llamada.mal span{color:var(--crema)}
+.vacio{font:700 15px var(--disp);color:var(--txt-dim);text-align:center;line-height:1.7;padding:20px}
+
+/* ── tiempo de la tipografía cinética ─────────────────────────────────── */
+#zTiempo{display:flex;align-items:center;gap:14px}
+.play{width:32px;height:32px;flex:none;border-radius:50%;background:var(--crema);color:var(--ink);display:grid;place-items:center;transition:transform var(--d-micro)}
+.play:active{transform:scale(.9)}
+.pista{position:relative;flex:1;height:28px;cursor:pointer;touch-action:none}
+.pista .riel-t{position:absolute;left:0;right:0;top:13px;height:3px;background:var(--line);border-radius:2px}
+.pista .lleno{position:absolute;left:0;right:0;top:13px;height:3px;background:var(--acc);transform-origin:0 50%;border-radius:2px}
+.pista .marcas-p i{position:absolute;top:9px;width:2px;height:11px;background:var(--txt-dim)}
+.pista .cabeza{position:absolute;top:5px;width:18px;height:18px;margin-left:-9px;background:var(--acc);transform:rotate(45deg);box-shadow:3px 3px 0 #000}
+#zTiempo .t{font:800 12px var(--mono);color:var(--txt-dim);width:52px}
+
+/* ── acciones como botones de control ─────────────────────────────────── */
+#zAcciones{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:6px 10px}
+.btn{position:relative;overflow:hidden;display:flex;align-items:center;gap:8px;height:40px;padding:0 13px 0 6px;border-radius:999px;font:900 15px var(--disp);
+  font-stretch:condensed;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;transition:transform var(--d-micro),background var(--d-micro)}
+.btn kbd{min-width:28px;height:28px;padding:0 6px;border-radius:50%;background:var(--crema);color:var(--ink);display:grid;place-items:center}
+.btn:hover{background:var(--panel)}
+.btn:active{transform:scale(.95)}
+.btn.prim{background:var(--acc);color:var(--ink);box-shadow:var(--sombra);padding-right:18px}
+.btn.prim kbd{background:var(--ink);color:var(--acc)}
+.btn.prim[aria-disabled=true]{background:var(--panel);color:var(--txt-dim);box-shadow:none;cursor:not-allowed}
+.btn.prim[aria-disabled=true] kbd{background:var(--bad);color:var(--crema)}
+.btn.sec{background:var(--crema);color:var(--ink)}.btn.sec kbd{background:var(--ink);color:var(--crema)}
+.btn .onda{position:absolute;border-radius:50%;background:rgba(255,255,255,.4);transform:scale(0);animation:onda var(--d-del) var(--c-sal) forwards;pointer-events:none}
+@keyframes onda{to{transform:scale(1);opacity:0}}
+.btn.listo::after{content:'✓';position:absolute;inset:0;display:grid;place-items:center;background:var(--good);color:var(--ink);font-size:20px;animation:listo 1.2s var(--c-std) forwards}
+@keyframes listo{0%{opacity:0}12%{opacity:1}80%{opacity:1}100%{opacity:0}}
+
+/* ── Karen (arriba a la derecha): su ESTADO, no puntaje ───────────────── */
+#karenBox{padding:14px 14px 12px;overflow:auto}
+#karenBox .cab{color:var(--acc);margin-bottom:8px}
+.karen .top{display:flex;align-items:center;gap:12px;position:relative}
+.hex{width:50px;height:56px;flex:none;background:var(--acc);color:var(--ink);clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);display:grid;place-items:center;font-size:24px;transition:background var(--d-std)}
+.veredicto{font:900 clamp(24px,2.2vw,36px)/.9 var(--disp);font-stretch:condensed;text-transform:uppercase}
+.veredicto small{display:block;font:600 12px system-ui,sans-serif;text-transform:none;color:var(--txt-dim);margin-top:4px}
+.segs{display:flex;gap:5px;margin-top:12px}
+.segs button{flex:1;height:10px;background:var(--acc);transform:skewX(-24deg);transition:transform var(--d-micro),background var(--d-std)}
+.segs button:hover{transform:skewX(-24deg) scaleY(1.6)}
+.segs button.no{background:var(--bad)}
+.karen.frena .hex{background:var(--bad);color:var(--crema)}
+.fallas{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.falla{display:block;text-align:left;padding:8px 10px;background:var(--bad);color:var(--crema);clip-path:polygon(0 0,100% 4%,98% 100%,1% 96%);transition:transform var(--d-micro)}
+.falla:hover{transform:translateX(-4px)}
+.falla b{font:800 10px var(--mono);letter-spacing:.12em;display:block}
+.falla span{font:700 12px/1.3 system-ui,sans-serif}
+
+/* ── ficha (TINTA): el bocadillo crema · pieza o capa, editable ───────── */
+#ficha{overflow:auto;background:var(--crema);color:var(--ink);border-radius:20px;padding:18px 18px 16px;box-shadow:var(--sombra);user-select:text}
+.ficha .tag{font:800 10px var(--mono);letter-spacing:.16em;color:color-mix(in srgb,var(--ink) 55%,transparent);display:flex;gap:8px;align-items:center}
+.ficha .tag .g{font-size:16px;color:var(--ink)}
+.ficha h2{font:900 24px/.95 var(--disp);font-stretch:condensed;text-transform:uppercase;margin:6px 0 8px;word-break:break-word}
+.ficha p{font:600 12.5px/1.35 system-ui,sans-serif;color:color-mix(in srgb,var(--ink) 75%,transparent)}
+.ficha dl{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;margin-top:10px;font:600 12.5px system-ui,sans-serif;align-items:center}
+.ficha dt{font:800 10px var(--mono);letter-spacing:.1em;color:color-mix(in srgb,var(--ink) 55%,transparent)}
+.ficha dd{word-break:break-word;min-width:0}
+.ficha .sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.4)}
+.ficha label.campo{display:block;margin-top:10px;font:800 10px var(--mono);letter-spacing:.1em;color:color-mix(in srgb,var(--ink) 60%,transparent)}
+.ficha textarea,.ficha input[type=text]{display:block;width:100%;margin-top:4px;border:2px solid var(--ink);border-radius:10px;background:#fff;color:var(--ink);padding:7px 9px;font:600 13px/1.3 system-ui,sans-serif;resize:vertical}
+.ficha input[type=color]{width:44px;height:30px;border:2px solid var(--ink);border-radius:8px;padding:0;background:none;vertical-align:middle;margin-right:8px}
+.ficha input[type=range]{width:100%;accent-color:var(--ink)}
+.ficha .fila-c{display:flex;align-items:center;gap:8px;margin-top:4px;font:700 12px var(--mono)}
+.ficha .ops{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.ficha .ops button{height:32px;padding:0 11px;border-radius:9px;background:var(--ink);color:var(--crema);font:900 13px var(--disp);text-transform:uppercase;letter-spacing:.04em}
+.ficha .ops button.quita{background:var(--bad)}
+.ficha .ops button[disabled]{opacity:.35;cursor:not-allowed}
+.ficha .chk{display:flex;align-items:center;gap:6px;margin-top:8px;font:700 12px system-ui}
+.bar{display:flex;align-items:center;gap:8px}.bar u{flex:1;height:5px;background:color-mix(in srgb,var(--ink) 14%,transparent);text-decoration:none;position:relative}
+.bar u i{position:absolute;top:0;bottom:0;background:var(--ink)}.bar em{font:800 11px var(--mono);font-style:normal;width:30px;text-align:right}
+.f2{margin-top:10px;padding:10px 12px;border-radius:12px;background:var(--ink);color:var(--crema)}
+.f2 b{font:800 10px var(--mono);letter-spacing:.14em;color:var(--acc);display:block;margin-top:6px}
+.f2 b:first-child{margin-top:0}
+.f2 textarea{background:#11151c;color:var(--crema);border-color:var(--line)}
+
+/* ── CP-6 · aviso ─────────────────────────────────────────────────────── */
+.aviso{position:fixed;left:50%;bottom:92px;transform:translate(-50%,20px) rotate(-2deg);opacity:0;pointer-events:none;background:var(--bad);color:var(--crema);
+  padding:12px 18px;font:700 14px system-ui,sans-serif;box-shadow:var(--sombra);transition:opacity var(--d-mod),transform var(--d-mod) var(--c-sal);max-width:min(70vw,640px);z-index:60}
+.aviso.ok{background:var(--good);color:var(--ink)}
+.aviso.on{opacity:1;transform:translate(-50%,0) rotate(-2deg)}
+
+/* ── CP-4 · ventanas flotantes (lote · activo · guardar) ───────────────── */
+.velo{position:fixed;inset:0;background:rgba(5,6,9,.82);display:none;place-items:center;z-index:50}
+.velo.on{display:grid}
+.ventana{position:relative;width:min(1180px,94vw);max-height:90vh;overflow:auto;background:var(--panel);padding:28px 30px;border-radius:24px;box-shadow:10px 10px 0 #000;animation:entra var(--d-std) var(--c-sal)}
+.ventana.chica{width:min(760px,94vw)}
+@keyframes entra{from{transform:translateY(24px) rotate(-1deg);opacity:0}}
+.ventana header{display:flex;align-items:flex-end;gap:30px;flex-wrap:wrap;margin-bottom:20px}
+.ventana h3{font:900 30px/.95 var(--disp);font-stretch:condensed;text-transform:uppercase}
+.ventana p{color:var(--txt-dim);font:600 13px/1.45 system-ui}
+.total{font:900 90px/.8 var(--disp);font-stretch:condensed;color:var(--acc)}
+.total small{display:block;font:800 12px var(--mono);letter-spacing:.2em;color:var(--txt-dim);margin-top:10px}
+.desglose{display:flex;gap:22px;flex-wrap:wrap}
+.desglose div{font:800 11px var(--mono);letter-spacing:.12em;color:var(--txt-dim)}
+.desglose b{display:block;font:900 30px var(--disp);color:var(--crema);letter-spacing:0}
+.rejilla{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px;align-items:end}
+.mini-l{text-align:center;animation:salta var(--d-std) var(--c-sal) backwards}
+@keyframes salta{from{transform:translateY(14px) scale(.94);opacity:0}}
+.mini-l img{max-width:100%;max-height:170px;border-radius:8px;border:4px solid var(--crema);box-shadow:5px 5px 0 #000;display:block;margin:0 auto}
+.mini-l span{display:block;margin-top:8px;font:900 13px var(--disp);letter-spacing:.1em;color:var(--good)}
+.mini-l small{display:block;font:800 10px var(--mono);color:var(--txt-dim)}
+.mini-l.no img{border-color:var(--bad)}.mini-l.no span{color:var(--bad)}
+.ventana footer{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:12px;margin-top:22px}
+.activo{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:24px}
+.activo .ver{border-radius:14px;min-height:240px;max-height:56vh;display:grid;place-items:center;overflow:hidden;
+  background-image:linear-gradient(45deg,#151a22 25%,transparent 25%,transparent 75%,#151a22 75%),linear-gradient(45deg,#151a22 25%,transparent 25%,transparent 75%,#151a22 75%);background-size:16px 16px;background-position:0 0,8px 8px;background-color:#0a0c10}
+.activo .ver img{max-width:100%;max-height:56vh;object-fit:contain}
+.activo dl{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin-top:12px;font:600 13px system-ui;user-select:text}
+.activo dt{font:800 10px var(--mono);letter-spacing:.12em;color:var(--txt-dim)}
+.activo dd{word-break:break-word}
+.porque{margin-top:12px;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--bad) 25%,transparent);font:700 13px system-ui}
+.guardar input[type=text]{width:100%;height:42px;border-radius:10px;border:1px solid var(--line);background:var(--ink);color:var(--crema);padding:0 12px;margin:12px 0;user-select:text}
+
+/* ── dique y hojas extra (sólo teléfono) ───────────────────────────────── */
+.dique,#zCapasHoja,#karenFallas{display:none}
+
+/* pantallas medianas */
+@media (max-width:1280px) and (min-width:761px){.btn{font-size:13px;height:36px}.btn kbd{min-width:24px;height:24px}.titulo h1{font-size:28px}}
+/* ── teléfono: la pieza al centro, las ventanas como hojas ────────────── */
+@media (max-width:760px){
+  .agua{display:none}
+  .zona{position:absolute;left:auto;top:auto;width:auto;height:auto}
+  #formatos{left:0;right:0;top:54px;height:44px;padding:0 10px}
+  #mesa{left:0;right:0;top:100px;bottom:170px}
+  #zTiempo{left:16px;right:16px;bottom:120px;height:36px}
+  #zAcciones{left:0;right:0;bottom:62px;height:54px;flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;padding:0 10px;scrollbar-width:none}
+  #zAcciones .btn{flex:none;height:38px;font-size:13px}
+  #karenBox{right:10px;top:8px;width:auto;height:auto;padding:0;background:none;border:0;clip-path:none;overflow:visible}
+  #karenBox .cab,#karenBox .segs{display:none}
+  .hex{width:32px;height:36px;font-size:16px}.veredicto{font-size:17px}.veredicto small{display:none}
+  .karen .fallas{display:none}
+  #zCapas{left:10px;top:8px;padding:0;width:auto;height:auto;overflow:visible;clip-path:none;background:none;border:0}
+  #zCapas .capas,#zCapas>.cab{display:none}
+  .titulo{transform:none}.titulo h1{font-size:19px;margin-top:4px;max-width:52vw}.titulo h1 span{display:inline;margin-left:6px}
+  .titulo small{display:none}
+  .hoja{position:fixed!important;left:0!important;right:0!important;bottom:62px!important;top:auto!important;width:auto!important;height:auto!important;max-height:62vh;
+    z-index:40;display:none!important;border-radius:20px 20px 0 0;clip-path:none;box-shadow:0 -10px 40px #000}
+  .hoja.abierta{display:flex!important;flex-direction:column;animation:sube var(--d-std) var(--c-sal)}
+  #ficha.hoja.abierta{display:block!important}
+  #zInventario.hoja.abierta{height:62vh!important}
+  #zCapasHoja.hoja.abierta .capas{display:flex}
+  .cerrar-hoja{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--crema);color:var(--ink);font:900 14px var(--disp)}
+  #ficha .cerrar-hoja{background:var(--ink);color:var(--crema);position:sticky;top:0;margin-left:auto}
+  @keyframes sube{from{transform:translateY(40px);opacity:0}}
+  .dique{display:flex;position:fixed;left:0;right:0;bottom:0;height:62px;z-index:45;background:var(--panel);border-top:1px solid var(--line)}
+  .dique button{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font:800 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--txt-dim)}
+  .dique button b{font:900 18px var(--disp);color:var(--crema)}
+  .dique button.on{color:var(--acc)}.dique button.on b{color:var(--acc)}
+  .dique button.mal b{color:var(--bad)}
+  .nodo-hud{display:none}
+  .activo{grid-template-columns:1fr}
+  .ventana{padding:20px 18px}
+  .total{font-size:64px}
+}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}.corte{display:none!important}}
+
+/* ── orden E9 · el PRIMER MINUTO de un vendedor nuevo: 1 plantilla → 2 material → 3 exportar; inventario grande; la jerga, a «Avanzado» ── */
+.pasos{position:absolute;left:50%;top:6px;transform:translateX(-50%);z-index:6;display:flex;gap:4px;padding:4px;border-radius:12px;background:#0b0e13e6;border:1px solid var(--line);box-shadow:0 6px 18px #0008}
+.pasos button{display:flex;align-items:center;gap:7px;height:34px;padding:0 12px 0 6px;border-radius:9px;font:800 13px system-ui,sans-serif;color:var(--txt-dim);white-space:nowrap}
+.pasos button i{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:900 12px var(--mono);font-style:normal;background:var(--line);color:var(--crema)}
+.pasos button.on{background:var(--acc);color:var(--ink)}.pasos button.on i{background:var(--ink);color:var(--acc)}
+.pasos button.hecho{color:var(--crema)}.pasos button.hecho i{background:#37c7b5;color:var(--ink)}
+.pasos button:hover{color:var(--crema)}
+.est.sin:not(.on){display:none}
+.rejas{grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:10px}
+.tile b{font:700 12px/1.2 system-ui,sans-serif;max-height:2.5em}
+.tile.plant .mini{padding:0;background:#0a0c10;aspect-ratio:9/12}
+.tile.plant canvas{width:100%;height:100%;display:block;object-fit:contain}
+.tile.plant em{display:none}
+#zInventario .guia-inv{font:700 12px/1.35 system-ui,sans-serif;color:var(--crema);background:#d4b24c22;border-left:3px solid var(--acc);padding:6px 8px;border-radius:6px}
+details.avanzado{margin-top:10px;border-top:1px dashed var(--line);padding-top:6px}
+details.avanzado>summary{cursor:pointer;font:800 11px var(--mono);letter-spacing:.1em;color:var(--txt-dim);list-style:none}
+details.avanzado>summary::before{content:"▸ "}details.avanzado[open]>summary::before{content:"▾ "}
+.btn.ter{opacity:.72;font-size:13px}
+.btn.prim{font-size:17px}
+@media (hover:none){.btn kbd{display:none}}
+@media (max-width:760px){.hoja.abierta{z-index:80!important;background:#10141b!important}#bPng{order:-1}.pasos{top:4px}.pasos button{height:30px;padding:0 9px 0 5px;font-size:12px}.pasos button span{display:none}.pasos button.on span{display:inline}}
+
+/* ── orden E19 · el Composer fácil: la columna cambia con Plantillas · Textos · Props · Imágenes; la pieza a la derecha ── */
+#zInventario{padding-bottom:8px}
+.modos{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:auto;padding-top:8px;border-top:1px solid var(--line)}
+.modos button{display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 4px;border-radius:10px;background:var(--ink);border:1px solid var(--line);font:900 13px var(--disp);font-stretch:condensed;text-transform:uppercase;letter-spacing:.04em;color:var(--txt-dim)}
+.modos button b{font:900 18px var(--disp);color:var(--crema)}
+.modos button.on{background:var(--acc);color:var(--ink);border-color:var(--acc)}.modos button.on b{color:var(--ink)}
+.modos button:hover{border-color:var(--acc)}
+#zInventario[data-modo=plantillas] #estantes,#zInventario[data-modo=plantillas] #busca,#zInventario[data-modo=props] #estantes{display:none}
+#zInventario[data-modo=imagenes] .est[data-e=plantillas],#zInventario[data-modo=imagenes] .est[data-e=props]{display:none}
+#zInventario[data-modo=textos] #estantes,#zInventario[data-modo=textos] #busca,#zInventario[data-modo=textos] #rejas{display:none}
+.textos{display:none;flex-direction:column;gap:10px;overflow:auto;min-height:0;flex:1;padding:2px 4px 4px 2px}
+#zInventario[data-modo=textos] .textos{display:flex}
+.textos h4{font:800 10px var(--mono);letter-spacing:.2em;color:var(--txt-dim);margin-top:4px}
+.estilos{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.estilo{text-align:left;padding:10px 12px;border-radius:12px;background:var(--ink);border:1px solid var(--line);min-height:62px;display:flex;flex-direction:column;justify-content:center;gap:3px}
+.estilo:hover{border-color:var(--acc);transform:translateY(-2px)}
+.estilo span{font:800 10px var(--mono);letter-spacing:.12em;color:var(--txt-dim)}
+.fuentes{display:flex;flex-direction:column;gap:6px}
+.fuente-b{display:flex;align-items:center;gap:10px;text-align:left;padding:8px 12px;border-radius:10px;background:var(--ink);border:1px solid var(--line)}
+.fuente-b i{font-style:normal;font-size:22px;line-height:1;width:44px;color:var(--acc)}
+.fuente-b b{font:700 13px system-ui;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fuente-b small{font:800 9px var(--mono);color:var(--txt-dim);letter-spacing:.08em}
+.fuente-b.on{border-color:var(--acc);box-shadow:inset 0 0 0 1px var(--acc)}
+.fuente-b.subir{border-style:dashed;border-color:var(--acc);color:var(--acc);justify-content:center;font:900 14px var(--disp);text-transform:uppercase}
+.textos .nota{font:600 12px/1.35 system-ui;color:var(--txt-dim)}
+.tile.mock .mini{background:var(--panel);border:2px solid var(--acc);color:var(--acc);font:900 13px var(--disp);text-transform:uppercase;text-align:center;padding:6px}
+.tile[draggable=true]{cursor:grab}
+.mesa.suelta .escena{outline:3px dashed var(--acc);outline-offset:-10px}
+/* la columna sale a una ventana flotante (⧉) y se arrastra por su cabeza */
+.flotar{width:26px;height:26px;border-radius:7px;border:1px solid var(--line);background:var(--ink);color:var(--acc);font:900 14px var(--disp);display:grid;place-items:center;flex:none}
+#zInventario.flota{position:fixed;left:var(--fx,36vw);top:var(--fy,12vh);width:min(560px,46vw);height:72vh;z-index:55;background:var(--panel);clip-path:none;border-radius:18px;border:1px solid var(--acc);box-shadow:10px 10px 0 #000;resize:both;overflow:hidden}
+#zInventario.flota .cab{cursor:move}
+#zInventario.flota .flotar{background:var(--acc);color:var(--ink)}
+/* Karen en tira: el veredicto arriba a la derecha; lo que frena baja como desplegable */
+#karenBox{display:flex;align-items:center;gap:10px;padding:6px 12px;overflow:visible;z-index:6}
+#karenBox>.cab{display:none}
+#karenBox .top{cursor:pointer;flex:none}
+#karenBox .hex{width:34px;height:38px;font-size:17px}
+#karenBox .veredicto{font-size:clamp(17px,1.4vw,24px)}#karenBox .veredicto small{font-size:11px;margin-top:2px}
+#karenBox .segs{flex:1;margin-top:0;min-width:40px}
+#karenBox .fallas{display:none;position:absolute;right:0;top:100%;width:min(380px,30vw);margin-top:6px;z-index:30;max-height:60vh;overflow:auto;padding:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:6px 6px 0 #000}
+#karenBox.abre .fallas:not(:empty){display:flex}
+/* profundidad Z de la capa elegida */
+.con-e19 .placa-hud{background-size:var(--placa-w,114%) 100%;background-position:0 0}   /* el pedestal de la placa queda bajo la pieza (centro en x 57 %) */
+.zprof span{white-space:nowrap}
+.zprof{display:flex;align-items:center;gap:8px;flex:none;width:min(300px,30%);font:800 10px var(--mono);letter-spacing:.14em;color:var(--txt-dim)}
+.zprof input{flex:1;accent-color:var(--acc)}
+.zprof em{font:800 12px var(--mono);font-style:normal;color:var(--acc);width:44px;text-align:right}
+.zprof.no{opacity:.4}
+/* ventana del mockup */
+.mock-v{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:22px}
+.mock-v .ver{border-radius:14px;display:grid;place-items:center;min-height:300px;background-image:linear-gradient(45deg,#151a22 25%,transparent 25%,transparent 75%,#151a22 75%),linear-gradient(45deg,#151a22 25%,transparent 25%,transparent 75%,#151a22 75%);background-size:16px 16px;background-position:0 0,8px 8px;background-color:#0a0c10}
+.mock-v canvas{max-width:100%;max-height:52vh;display:block}
+.disp{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.disp button{height:36px;padding:0 14px;border-radius:10px;background:var(--ink);border:1px solid var(--line);font:900 14px var(--disp);text-transform:uppercase}
+.disp button.on{background:var(--acc);color:var(--ink);border-color:var(--acc)}
+.mock-v label{display:block;margin-top:10px;font:800 10px var(--mono);letter-spacing:.12em;color:var(--txt-dim)}
+.mock-v input[type=range]{width:100%;accent-color:var(--acc)}
+.fotos{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;max-height:190px;overflow:auto;margin-top:6px}
+.fotos button{aspect-ratio:1;border-radius:8px;background:#0a0c10 center/cover no-repeat;border:2px solid transparent}
+.fotos button.on{border-color:var(--acc)}
+.fotos button.traer{background:var(--panel);border:2px dashed var(--acc);color:var(--acc);font:900 22px var(--disp)}
+@media (max-width:760px){
+  #zInventario .modos{order:-1;margin:0 0 4px;padding:0 0 8px;border-top:0;border-bottom:1px solid var(--line)}
+  .flotar{display:none}
+  #karenBox{display:block;padding:0}#karenBox .segs,#karenBox .fallas{display:none!important}
+  #zTiempo .zprof{width:44%}#zTiempo .zprof span{display:none}
+  .mock-v{grid-template-columns:1fr}
+  .estilos{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="placa-hud" id="placaHud"></div><div id="nodosHud"></div>
+  <div class="resplandor"></div><div class="piso"></div>
+  <div class="agua" id="agua"></div>
+  <section class="zona panel" id="zCapas" aria-label="Título y capas">
+    <div class="titulo"><a class="rueda" id="aRueda" href="https://github.com/DrkRoatchK/codec" title="El idioma con el que pinta">◂ CODEC</a><small>Design Composer · codec abierto</small><h1 id="nombre">Composer</h1></div>
+    <div class="cab"><span>CAPAS · ORDEN Z · ← →</span></div>
+    <div class="capas" id="capas" aria-label="Capas en Z"></div>
+  </section>
+  <section class="zona panel hoja" id="zCapasHoja" aria-label="Capas (teléfono)" style="padding:14px"><div class="cab"><span>CAPAS · ORDEN Z</span><button class="cerrar-hoja" data-cierra aria-label="Cerrar">×</button></div><div class="capas" id="capasHoja"></div></section>
+  <section class="zona panel hoja" id="zInventario" aria-label="Inventario del DAM" data-modo="plantillas">
+    <div class="cab" id="invCab"><span id="invTitulo">MATERIAL · <b>DAM</b></span><span id="invCuenta"></span><button class="flotar" id="bFlotar" title="Sacar la columna a una ventana flotante (y volverla)" aria-label="Ventana flotante">⧉</button><button class="cerrar-hoja" data-cierra aria-label="Cerrar">×</button></div>
+    <div class="estantes" id="estantes" role="tablist"></div>
+    <input class="busca" id="busca" type="search" placeholder="Buscar en todo el DAM…" aria-label="Buscar en el DAM">
+    <div class="rejas" id="rejas"></div>
+    <div class="textos" id="textos"></div>
+    <nav class="modos" id="modos" aria-label="Qué pones en la pieza"><button data-modo="plantillas"><b>▤</b>Plantillas</button><button data-modo="textos"><b>T</b>Textos</button><button data-modo="props"><b>✦</b>Props</button><button data-modo="imagenes"><b>▦</b>Imágenes</button></nav>
+  </section>
+  <nav class="zona" id="formatos" aria-label="Formatos"></nav>
+  <main class="zona mesa" id="mesa"><nav class="pasos" id="pasos" aria-label="Paso a paso"><button data-paso="1"><i>1</i><span>Elige una plantilla</span></button><button data-paso="2"><i>2</i><span>Pon tu material</span></button><button data-paso="3"><i>3</i><span>Exporta</span></button></nav><div class="escena" id="escena"><div class="vacio" id="vacio">Cargando la semilla…</div></div></main>
+  <section class="zona panel karen hoja-k" id="karenBox" aria-live="polite">
+    <div class="cab" title="Karen revisa la ley de capas">¿PUEDE SALIR? · REVISIÓN</div>
+    <div class="top" id="kTop" title="Toca para ver qué frena"><div class="hex g" id="kGlifo">𐤊</div><div class="veredicto" id="voz">—</div></div>
+    <div class="segs" id="segs"></div>
+    <div class="fallas" id="fallas"></div>
+  </section>
+  <aside class="zona ficha hoja" id="ficha"></aside>
+  <div class="zona" id="zTiempo">
+    <button class="play" id="bPlay" aria-label="Animar la tipografía (espacio)"><svg width="12" height="12" viewBox="0 0 14 14"><path d="M3 1.5v11l9-5.5z" fill="currentColor"/></svg></button>
+    <div class="pista" id="pista" aria-label="Tiempo de la tipografía cinética"><div class="riel-t"></div><div class="lleno" id="lleno"></div><div class="marcas-p" id="marcasT"></div><div class="cabeza" id="cabeza"></div></div>
+    <div class="t" id="tLabel">t 1.00</div>
+    <label class="zprof" id="zProfL" title="Profundidad Z de la capa elegida: 1 = hasta atrás (encima del fondo)"><span>PROFUNDIDAD Z</span><input type="range" id="zProf" min="1" max="1" step="1" value="1" aria-label="Profundidad Z de la capa"><em id="zProfV">—</em></label>
+  </div>
+  <div class="zona" id="zAcciones">
+    <button class="btn" id="bTexto"><kbd>T</kbd>Texto</button>
+    <button class="btn ter" id="bExpl"><kbd>E</kbd><span id="lExpl">Capas en Z</span></button>
+    <button class="btn ter" id="bArbol" title="Bajar el árbol de capas (JSON técnico)"><kbd>J</kbd>Árbol</button>
+    <button class="btn ter" id="bTodo" title="Exportar todos los formatos a la vez"><kbd>L</kbd>Lote</button>
+    <button class="btn" id="bAbrir"><kbd>O</kbd>Abrir</button>
+    <button class="btn sec" id="bGuardar"><kbd>G</kbd>Guardar</button>
+    <button class="btn prim" id="bPng"><kbd>↵</kbd>Exportar</button>
+  </div>
+  <nav class="dique" id="dique" aria-label="Ventanas">
+    <button data-hoja="zCapasHoja"><b>≡</b>Capas</button>
+    <button data-hoja="zInventario"><b>▦</b>Material</button>
+    <button data-hoja="ficha"><b>✎</b>Ficha</button>
+    <button data-hoja="karenFallas" id="dKaren"><b>𐤊</b>Revisión</button>
+  </nav>
+  <section class="zona panel hoja" id="karenFallas" aria-label="Karen (teléfono)" style="padding:14px"><div class="cab"><span>¿PUEDE SALIR? · REVISIÓN</span><button class="cerrar-hoja" data-cierra aria-label="Cerrar">×</button></div><div class="fallas" id="fallasHoja"></div></section>
+</div>
+<input type="file" id="abrirArchivo" accept=".json,application/json" hidden>
+<input type="file" id="traerImagen" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+<input type="file" id="subirFuente" accept=".woff2,.woff,.ttf,.otf,font/woff2,font/woff,font/ttf,font/otf" hidden>
+<div class="aviso" id="aviso"></div>
+<div class="velo" id="velo"><div class="ventana" id="ventana"></div></div>
+
+<script id="cruce" type="application/json">{"id":"CR-COMPOSER-ABIERTO","nodo":"","nombre":"Design Composer","forma":"composer","fuente":{"tipo":"rama","ruta":""},"mapa":{"receta":"RC-MENSAJE-MASCOTA","datos":"PR-AGUA-SABORES","recetas":["RC-MENSAJE-MASCOTA","RC-LIENZO"]}}</script>
+<script id="rama" type="application/json">{"semilla":{"formatos":[{"id":"#DOC","nombre":"cómo se lee","w":"ancho en px al exportar","h":"alto en px al exportar","zonas":"zonas reservadas en fracciones {x,y,w,h,label}: ahí no cae texto ni marca (LC-ZONA)","plataforma":"id de `plataformas` cuando aplica","estado":"~SUPUESTO"},{"id":"sq","nombre":"Cuadrado 1:1","w":1080,"h":1080,"plataforma":"ig_feed","zonas":[{"x":0,"y":0,"w":1,"h":0.05,"label":"status"},{"x":0,"y":0.86,"w":1,"h":0.14,"label":"caption"}],"estado":"~SUPUESTO"},{"id":"post_v","nombre":"Post 4:5","w":1080,"h":1350,"plataforma":"ig_feed","zonas":[{"x":0,"y":0,"w":1,"h":0.05,"label":"status"},{"x":0,"y":0.86,"w":1,"h":0.14,"label":"caption"}],"estado":"~SUPUESTO"},{"id":"story","nombre":"Story / Reel / Estado 9:16","w":1080,"h":1920,"plataforma":"wa","zonas":[{"x":0,"y":0,"w":1,"h":0.12,"label":"UI top"},{"x":0,"y":0.85,"w":1,"h":0.15,"label":"CTA/msg"},{"x":0.85,"y":0.3,"w":0.15,"h":0.4,"label":"buttons"}],"estado":"~SUPUESTO"},{"id":"land","nombre":"Landscape 16:9","w":1920,"h":1080,"plataforma":"yt","zonas":[{"x":0,"y":0.9,"w":1,"h":0.1,"label":"progress"},{"x":0.85,"y":0.85,"w":0.15,"h":0.15,"label":"duration"}],"estado":"~SUPUESTO"},{"id":"fb_cv","nombre":"Portada Facebook","w":851,"h":315,"plataforma":"fb","zonas":[{"x":0,"y":0,"w":1,"h":0.08,"label":"nav"},{"x":0,"y":0.85,"w":1,"h":0.15,"label":"profile area"}],"estado":"~SUPUESTO"},{"id":"li","nombre":"Post LinkedIn","w":1200,"h":627,"plataforma":"li","zonas":[{"x":0,"y":0.88,"w":1,"h":0.12,"label":"reactions"}],"estado":"~SUPUESTO"},{"id":"yt","nombre":"Miniatura YouTube","w":1280,"h":720,"plataforma":"yt","zonas":[{"x":0.82,"y":0.85,"w":0.18,"h":0.15,"label":"duration"},{"x":0,"y":0,"w":1,"h":0.06,"label":"top bar"}],"estado":"~SUPUESTO"},{"id":"web_dr","nombre":"Web 4:3","w":960,"h":720,"plataforma":"web","zonas":[],"estado":"~SUPUESTO"},{"id":"web_dr2","nombre":"Web 1080×920","w":1080,"h":920,"plataforma":"web","zonas":[],"estado":"~SUPUESTO"},{"id":"print_a4","nombre":"Impreso A4","w":2480,"h":3508,"plataforma":"print","zonas":[{"x":0,"y":0,"w":0.03,"h":1,"label":"bleed"},{"x":0.97,"y":0,"w":0.03,"h":1,"label":"bleed"},{"x":0,"y":0,"w":1,"h":0.03,"label":"bleed"},{"x":0,"y":0.97,"w":1,"h":0.03,"label":"bleed"}],"estado":"~SUPUESTO"},{"id":"badge_h","nombre":"Gafete horizontal","w":1012,"h":638,"plataforma":"print","zonas":[{"x":0,"y":0,"w":0.05,"h":1,"label":"bleed"},{"x":0.95,"y":0,"w":0.05,"h":1,"label":"bleed"},{"x":0,"y":0,"w":1,"h":0.05,"label":"bleed"},{"x":0,"y":0.95,"w":1,"h":0.05,"label":"bleed"}],"estado":"~SUPUESTO"},{"id":"badge_v","nombre":"Gafete vertical","w":638,"h":1012,"plataforma":"print","zonas":[{"x":0,"y":0,"w":0.05,"h":1,"label":"bleed"},{"x":0.95,"y":0,"w":0.05,"h":1,"label":"bleed"},{"x":0,"y":0,"w":1,"h":0.05,"label":"bleed"},{"x":0,"y":0.95,"w":1,"h":0.05,"label":"bleed"}],"estado":"~SUPUESTO"},{"id":"li_banner","nombre":"Portada LinkedIn","w":1584,"h":396,"plataforma":"li","zonas":[{"x":0,"y":0,"w":1,"h":0.15,"label":"nav overlay"},{"x":0,"y":0.65,"w":1,"h":0.35,"label":"profile area"},{"x":0,"y":0,"w":0.05,"h":1,"label":"edge"}],"estado":"~SUPUESTO"},{"id":"screen_h","nombre":"Pantalla horizontal","w":1920,"h":1080,"plataforma":"","zonas":[],"estado":"~SUPUESTO"},{"id":"screen_v","nombre":"Pantalla vertical","w":1080,"h":1920,"plataforma":"","zonas":[{"x":0,"y":0,"w":0.03,"h":1,"label":"bleed"},{"x":0.97,"y":0,"w":0.03,"h":1,"label":"bleed"},{"x":0,"y":0,"w":1,"h":0.03,"label":"bleed"},{"x":0,"y":0.97,"w":1,"h":0.03,"label":"bleed"}],"estado":"~SUPUESTO"}],"ley_capas":[{"id":"#DOC","nombre":"qué fija la regla","regla":"la regla dicha en una frase","prueba":"id de la comprobación que corren Karen del Composer (JS) y la mano de Python, la misma","porque":"qué error concreto evita","estado":"~PROPUESTO"},{"id":"LC-FONDO","nombre":"Un solo fondo","regla":"Toda pieza tiene exactamente una capa de rol «fondo», en z = 0, que cubre el cuadro completo.","prueba":"k_fondo","porque":"Sin fondo declarado, el color de atrás lo pone el programa y no la marca.","estado":"~PROPUESTO"},{"id":"LC-ORDEN","nombre":"Orden en Z","regla":"Cada capa lleva un z entero y único; la de z mayor se pinta encima. Nadie comparte z.","prueba":"k_orden","porque":"Dos capas con el mismo z se pintan en el orden en que llegaron: el resultado cambia sin que nadie lo decida.","estado":"~PROPUESTO"},{"id":"LC-NOCHOQUE","nombre":"No chocar","regla":"Las cajas de las capas marcadas choca=true no se intersectan. Las decorativas pueden declarar choca=false.","prueba":"k_choque","porque":"Texto encima de la mascota o del logo deja de leerse.","estado":"~PROPUESTO"},{"id":"LC-ZONA","nombre":"Zona segura","regla":"Ninguna capa de texto ni de marca cae dentro de una zona reservada del formato (`formatos.zonas`).","prueba":"k_zona","porque":"La interfaz de la plataforma tapa lo que cae ahí: nombre, botones, barra de progreso.","estado":"~PROPUESTO"},{"id":"LC-UNIDAD","nombre":"Fracciones, no píxeles","regla":"Las cajas se escriben en fracciones 0–1 del formato. El píxel sólo existe al pintar.","prueba":"k_unidad","porque":"Así el mismo árbol sirve en 9:16, 1:1 y A4 sin reescribirse.","estado":"~PROPUESTO"},{"id":"LC-CABE","nombre":"El texto cabe","regla":"El texto de una capa cabe en su caja con el tamaño de letra declarado; si no cabe, Karen lo dice, no se encoge en silencio.","prueba":"k_cabe","porque":"Encoger en silencio produce piezas ilegibles que nadie aprobó.","estado":"~PROPUESTO"},{"id":"LC-F2","nombre":"F2 arde siempre","regla":"Una pieza no sale si sus datos no declaran necesidad y distanciamiento.","prueba":"k_f2","porque":"«F2, F5, F9 arden siempre — si una queda vacía el artefacto no está terminado» (libro 06).","estado":"~PROPUESTO"}],"modulos_codigo":[{"id":"#DOC","nombre":"cómo se llama el módulo","tipo":"fondo | A (acomoda) | unitario | compuesto","alefato":"letra(s) en Lectura B de codec_operaciones · vacío si ninguna aplica (no se inventa)","lectura_b":"por qué esa letra: su significado en el codec y cómo se cumple aquí","firma":"campos que recibe (la firma de datos: misma firma = mismo módulo)","op_logico":"operador lógico de ARKHOS que transforma sus datos (col_op_logicos) · vacío si sólo pinta","op_visual":"operador visual de ARKHOS al que corresponde (col_op_visuales) · vacío si no hay","hijos":"para compuestos: módulos que contiene, con su caja en fracciones por orientación","z":"z por defecto (LC-ORDEN)","choca":"true si entra a la regla de no choque (LC-NOCHOQUE)","zona":"true si debe respetar las zonas seguras (LC-ZONA)","renderers":"quién sabe pintarlo: canvas (Composer) · html (mano de Python con alefato_html)","estado":"~PROPUESTO"},{"id":"MC-FONDO-SOLIDO","nombre":"Fondo sólido","tipo":"fondo","alefato":"𐤁","lectura_b":"bet · contener: «define contenedor, formato, canvas» (codec_operaciones). El fondo es el contenedor de la pieza.","firma":["color"],"op_logico":"","op_visual":"","hijos":[],"z":0,"choca":false,"zona":false,"renderers":["canvas","html"],"estado":"~PROPUESTO"},{"id":"MC-MASCOTA","nombre":"Mascota","tipo":"unitario","alefato":"","lectura_b":"Ninguna letra aplica todavía: no se inventa (precedente MEM).","firma":["color","ruta"],"op_logico":"","op_visual":"","hijos":[],"z":20,"choca":true,"zona":false,"renderers":["canvas","html"],"estado":"~PROPUESTO"},{"id":"MC-GLOBO-TEXTO","nombre":"Globo de diálogo con tipografía cinética","tipo":"unitario","alefato":"𐤐","lectura_b":"pe · expresar: «boca · artefacto final» (Lectura B) y «decir» (Lectura A). La mascota dice el texto.","firma":["texto","color_globo","color_texto"],"op_logico":"","op_visual":"","hijos":[],"z":30,"choca":true,"zona":true,"renderers":["canvas","html"],"estado":"~PROPUESTO"},{"id":"MC-FIRMA-MARCA","nombre":"Firma de la marca","tipo":"unitario","alefato":"𐤓","lectura_b":"resh · iniciar: «nombra al sujeto» (codec_operaciones). La firma nombra a quién habla.","firma":["nombre","color"],"op_logico":"","op_visual":"","hijos":[],"z":40,"choca":true,"zona":true,"renderers":["canvas","html"],"estado":"~PROPUESTO"},{"id":"MC-MENSAJE-MASCOTA","nombre":"Mensaje flotante de videojuego con mascota","tipo":"compuesto","alefato":"","lectura_b":"Pendiente: un compuesto de módulos necesita su palabra en el codec (p. ej. 𐤁𐤐 contener+expresar), y una palabra nueva entra sólo con ratificación MEM.","firma":["color_fondo","color_mascota","ruta_mascota","mensaje","color_globo","color_texto","compania","color_firma"],"op_logico":"","op_visual":"","z":0,"choca":false,"zona":false,"renderers":["canvas","html"],"hijos":[{"modulo":"MC-FONDO-SOLIDO","z":0,"campos":{"color":"color_fondo"},"caja":{"vertical":[0,0,1,1],"cuadrado":[0,0,1,1],"horizontal":[0,0,1,1]}},{"modulo":"MC-MASCOTA","z":20,"campos":{"color":"color_mascota","ruta":"ruta_mascota"},"caja":{"vertical":[0.22,0.45,0.5,0.28],"cuadrado":[0.06,0.34,0.36,0.48],"horizontal":[0.06,0.18,0.3,0.7]}},{"modulo":"MC-GLOBO-TEXTO","z":30,"campos":{"texto":"mensaje","color_globo":"color_globo","color_texto":"color_texto"},"caja":{"vertical":[0.1,0.14,0.74,0.28],"cuadrado":[0.44,0.16,0.5,0.42],"horizontal":[0.4,0.14,0.52,0.52]}},{"modulo":"MC-FIRMA-MARCA","z":40,"campos":{"nombre":"compania","color":"color_firma"},"caja":{"vertical":[0.1,0.76,0.74,0.06],"cuadrado":[0.06,0.06,0.88,0.06],"horizontal":[0.4,0.72,0.52,0.1]}}],"estado":"~PROPUESTO"},{"id":"MC-IMAGEN","nombre":"Imagen del DAM o prop","tipo":"unitario","alefato":"","lectura_b":"Ninguna letra aplica todavía: no se inventa (precedente MEM).","firma":["ruta","nombre"],"op_logico":"","op_visual":"","hijos":[],"z":20,"choca":false,"zona":false,"renderers":["canvas","html"],"estado":"~PROPUESTO"},{"id":"MC-TEXTO","nombre":"Texto libre","tipo":"unitario","alefato":"","lectura_b":"Ninguna letra aplica todavía (el globo es 𐤐 porque la mascota habla; un texto suelto no siempre es boca): no se inventa.","firma":["texto","color","tam"],"op_logico":"","op_visual":"","hijos":[],"z":30,"choca":true,"zona":true,"renderers":["canvas","html"],"estado":"~PROPUESTO"},{"id":"MC-LIENZO","nombre":"Lienzo en blanco","tipo":"compuesto","alefato":"𐤁","lectura_b":"bet · contener: sólo el contenedor (el fondo). Lo demás lo pone quien diseña desde el inventario.","firma":["color_fondo"],"op_logico":"","op_visual":"","z":0,"choca":false,"zona":false,"renderers":["canvas","html"],"hijos":[{"modulo":"MC-FONDO-SOLIDO","z":0,"campos":{"color":"color_fondo"},"caja":{"vertical":[0,0,1,1],"cuadrado":[0,0,1,1],"horizontal":[0,0,1,1]}}],"estado":"~PROPUESTO"},{"id":"MC-MOCKUP","nombre":"Mockup de dispositivo","tipo":"unitario","alefato":"","lectura_b":"Ninguna letra aplica todavía (no se inventa): es un objeto que enseña otra imagen dentro de su pantalla.","firma":["dispositivo","ruta","giro","inclina","color"],"op_logico":"","op_visual":"","hijos":[],"z":25,"choca":false,"zona":false,"renderers":["canvas"],"estado":"~PROPUESTO"},{"id":"MC-TIPOGRAFIA","nombre":"Tipografía subida","tipo":"unitario","alefato":"","lectura_b":"Ninguna letra aplica: no es capa, es un recurso de MC-TEXTO (campo fuente = su familia).","firma":["familia","archivo (woff2 · woff · ttf · otf)"],"op_logico":"","op_visual":"","hijos":[],"z":0,"choca":false,"zona":false,"renderers":["canvas"],"estado":"~PROPUESTO"}],"recetas_composer":[{"id":"#DOC","nombre":"qué pieza arma","modulo":"módulo raíz que se instancia (modulos_codigo)","formatos":"ids de `formatos` en los que se puede exportar","datos":"tabla de donde salen las filas que la llenan","estado":"~PROPUESTO"},{"id":"RC-MENSAJE-MASCOTA","nombre":"Mensaje con mascota","modulo":"MC-MENSAJE-MASCOTA","formatos":["story","sq","post_v","screen_v","land"],"datos":"composer_pruebas","estado":"~PROPUESTO"},{"id":"RC-LIENZO","nombre":"Lienzo libre","modulo":"MC-LIENZO","formatos":["sq","post_v","story","land","li","yt","fb_cv","li_banner","web_dr","print_a4","screen_h","screen_v"],"datos":"composer_lienzos","estado":"~PROPUESTO"}],"composer_lienzos":[{"id":"#DOC","compania":"nombre del lienzo","color_fondo":"hex del fondo","necesidad":"F2 · la escribe quien diseña en la ficha de la pieza (vacío: Karen frena, a propósito)","distanciamiento":"F2 · ídem","estado":"~PROPUESTO"},{"id":"LZ-TINTA","compania":"Lienzo tinta","color_fondo":"#0e1117","necesidad":"","distanciamiento":"","estado":"~PROPUESTO"},{"id":"LZ-CREMA","compania":"Lienzo crema","color_fondo":"#ece7dc","necesidad":"","distanciamiento":"","estado":"~PROPUESTO"},{"id":"LZ-NOCHE","compania":"Lienzo noche","color_fondo":"#0b2a6e","necesidad":"","distanciamiento":"","estado":"~PROPUESTO"}],"composer_pruebas":[{"id":"#DOC","compania":"quién habla","necesidad":"F2 · qué necesita el lector","distanciamiento":"F2 · por qué no lo resuelve hoy","mensaje":"lo que dice la mascota","color_fondo":"hex","color_mascota":"hex","color_globo":"hex","color_texto":"hex","color_firma":"hex","ruta_mascota":"PNG del DAM · vacío = gota de prueba","estilo":"ley de versión","epoca":"ley de versión","lugar":"ley de versión","estado":"~PROPUESTO"},{"id":"PR-AGUA-SABORES","compania":"AGUAS DE SABOR · PRUEBA","necesidad":"Refrescarse en la calle con algo que se antoje.","distanciamiento":"El agua sola no se antoja y lo dulce cae pesado.","mensaje":"¿Sed? Esta sí se antoja.","color_fondo":"#ff6b3d","color_mascota":"#ffd23f","color_globo":"#fff7e8","color_texto":"#3b1d0f","color_firma":"#fff7e8","ruta_mascota":"","estilo":"cartoon 2D","epoca":"hoy","lugar":"puesto en la calle","estado":"~PROPUESTO"},{"id":"PR-AGUA-PURIFICADORA","compania":"PURIFICADORA · PRUEBA","necesidad":"Tener agua segura en casa todos los días.","distanciamiento":"El garrafón llega y nadie sabe de dónde viene.","mensaje":"Tu agua, purificada aquí enfrente.","color_fondo":"#0b4f8a","color_mascota":"#7fd3ff","color_globo":"#f2fbff","color_texto":"#0b2a45","color_firma":"#f2fbff","ruta_mascota":"","estilo":"cartoon 2D","epoca":"hoy","lugar":"planta de llenado","estado":"~PROPUESTO"}],"composer_estantes":[{"id":"plantillas","orden":1,"nombre":"Plantillas","que":"Piezas armadas por receta (composer_pruebas): se abren y se editan","regla":{"plantillas":"composer_pruebas"},"estado":"~PROPUESTO"},{"id":"props","orden":8,"nombre":"Props","que":"Personajes y objetos sueltos con alfa (props & assets graphic design): cualquier sistema los usa","regla":{"tipo":["PR"]},"estado":"~PROPUESTO"},{"id":"#DOC","orden":"posición","nombre":"estante","que":"qué hay","regla":"qué fichas caen aquí"}],"dam_etapas":[]},"catalogo":[],"lamina":{"disposicion":{"#DOC":"orden E19 · zonas de la cara fácil en % de la pantalla (x, y, w, h); png:false = esa parte va sin su marco del HUD. ~PROPUESTO","#zCapas":{"x":0.6,"y":1,"w":33,"h":29.5},"#zInventario":{"x":0.6,"y":31,"w":33,"h":68},"#formatos":{"x":35,"y":1,"w":44,"h":8},"#karenBox":{"x":80,"y":1,"w":19.4,"h":8,"png":false},"#mesa":{"x":35,"y":10,"w":44,"h":70},"#ficha":{"x":80,"y":10,"w":19.4,"h":70},"#zTiempo":{"x":35,"y":81,"w":64.4,"h":7.5},"#zAcciones":{"x":35,"y":89,"w":64.4,"h":10}},"listo":false},"base":"./","huella":"construir_composer_abierto@2026-10-19 · Eck"}</script>
+<script id="palabras" type="application/json">{"modulos":{"MC-FONDO-SOLIDO":[["𐤁",{"relleno":"$color"}]],"MC-MASCOTA":[["𐤏",{"si":"ruta","ruta":"$ruta","encaje":"contener","rebote":0.04,"si_falta":"gota","color":"$color"}],["𐤍",{"si_no":"ruta","forma":"gota","color":"$color","rebote":0.04}]],"MC-GLOBO-TEXTO":[["𐤁",{"relleno":"$color_globo","borde":"$color_texto","radio":0.04,"grosor":0.007}],["𐤅",{"hacia":"MC-MASCOTA","relleno":"$color_globo","borde":"$color_texto","grosor":0.007,"radio":0.04}],["𐤐",{"texto":"$texto","tam":0.068,"color":"$color_texto","peso":"800","alinear":"center","pad":0.035,"interlineado":1.15,"base":0.9,"salto":0.18,"cinetico":true}]],"MC-FIRMA-MARCA":[["𐤐",{"texto":"$nombre","una_linea":true,"tam":0.04,"tam_alto":0.7,"color":"$color","peso":"700","espaciado":0.12}]],"MC-IMAGEN":[["𐤏",{"ruta":"$ruta","encaje":"contener","marco_si_falta":true}]],"MC-TEXTO":[["𐤐",{"texto":"$texto","tam":"$tam|0.06","color":"$color|#ece7dc","peso":"$peso|900","fuente":"$fuente","alinear":"$alinear|center","interlineado":1.12,"base":0.88,"cinetico":true,"arriba_si_no_cabe":true}]],"MC-MOCKUP":[["𐤔",{"objeto":"dispositivo","dispositivo":"$dispositivo|laptop","color":"$color","ruta":"$ruta","giro":"$giro|0","inclina":"$inclina|0"}]]}}</script>
+<script>/* codec_runtime/pinta.js · el motor de la Lectura A (pintar) · el MISMO algoritmo que pinta.py
+   árbol de la pieza (tag pieza · children = capas con data.modulo · data.caja · data.z · data.campos)
+   + palabras (palabras_pintura.json › modulos)  →  LISTA DE DIBUJO [{nid, modulo, z, op, caja, p}]
+   Quien pinta (canvas, HTML, PDF…) sólo sabe dibujar las letras 𐤁 𐤏 𐤐 𐤅 𐤍 𐤔. Nada de un módulo vive aquí.
+   huella: pinta@2026-10-19 · Eck */
+(function (raiz) {
+  'use strict';
+  function vacio(v) { return v === undefined || v === null || v === ''; }
+  function valor(v, campos) {
+    if (typeof v !== 'string' || v.charAt(0) !== '$') return v;
+    var k = v.slice(1), d, i = k.indexOf('|');
+    if (i >= 0) { d = k.slice(i + 1); k = k.slice(0, i); if (/^-?\d+(\.\d+)?$/.test(d)) d = Number(d); }
+    var x = campos[k];
+    return vacio(x) ? (d === undefined ? null : d) : x;
+  }
+  function lista(arbol, palabras) {
+    var hijos = (arbol.children || []).map(function (n, i) { return [n, i]; });
+    hijos.sort(function (a, b) { return (a[0].data.z - b[0].data.z) || (a[1] - b[1]); });
+    var out = [];
+    hijos.forEach(function (par) {
+      var n = par[0], d = n.data, c = d.campos || {}, w = palabras[d.modulo];
+      if (!w) { out.push({nid: n.nid, modulo: d.modulo, z: d.z, op: '?', caja: d.caja, p: {}}); return; }
+      w.forEach(function (paso) {
+        var g = paso[0], q = paso[1] || {}, p = {};
+        if (q.si && vacio(c[q.si])) return;
+        if (q.si_no && !vacio(c[q.si_no])) return;
+        Object.keys(q).sort().forEach(function (k) { if (k !== 'si' && k !== 'si_no') p[k] = valor(q[k], c); });
+        if (g === '𐤅') {
+          var h = (arbol.children || []).filter(function (k) { return k.data.modulo === q.hacia; })[0];
+          p.hacia_caja = h ? h.data.caja : null;
+        }
+        out.push({nid: n.nid, modulo: d.modulo, z: d.z, op: g, caja: d.caja, p: p});
+      });
+    });
+    return out;
+  }
+  var API = {lista: lista, version: 'pinta@2026-10-19'};
+  if (typeof module !== 'undefined' && module.exports) module.exports = API; else raiz.CODEC_PINTA = API;
+})(typeof window !== 'undefined' ? window : this);
+</script>
+<script>
+(function(){
+'use strict';
+var CRUCE = JSON.parse(document.getElementById('cruce').textContent);
+var RAMA = null; try { RAMA = JSON.parse(document.getElementById('rama').textContent); } catch(e) { RAMA = null; }
+var S = null, CAT = [], LAM = null, BASE = '';
+var ESTADO = {receta:null, datos:null, formato:null, t:1, capa:null, explotada:false, editado:false, nombre:'', estante:null, busca:'', cambiar:false, modo:'plantillas', fuenteTexto:'disp'};
+var IMG = {}, ARBOL = null, KAREN = [];
+var REDUCIDO = matchMedia('(prefers-reduced-motion: reduce)').matches;
+var TEL = matchMedia('(max-width: 760px)');
+var LLAVE = 'lyon_composer_ultimo';
+var HUELLA = 'composer@2026-10-18 · Eck';
+// orden E19 · tipografías subidas (familia → dataURL; se quedan en esta compu) y props hechos aquí (mockups)
+var FUENTES = {}, LLAVE_F = 'lyon_composer_fuentes', LLAVE_P = 'lyon_composer_props';
+
+// ── utilidades ──────────────────────────────────────────────────────────────
+function filas(t){ return (S && S[t] || []).filter(function(f){ return f && f.id !== '#DOC'; }); }
+function porId(t, id){ return filas(t).filter(function(f){ return f.id === id; })[0]; }
+function baseSemilla(){ var r = CRUCE.fuente.ruta || 'os_semilla.json'; return r.slice(0, r.length - 'os_semilla.json'.length); }
+function orientacion(f){ return f.h > f.w * 1.05 ? 'vertical' : (f.w > f.h * 1.05 ? 'horizontal' : 'cuadrado'); }
+function inter(a, b){ return a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3]; }
+function sombra(hex, k){ var n = parseInt(String(hex || '#888888').slice(1), 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return 'rgb(' + Math.round(r*k) + ',' + Math.round(g*k) + ',' + Math.round(b*k) + ')'; }
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function $(id){ return document.getElementById(id); }
+function r3(v){ return Math.round(v*1000)/1000; }
+function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+function src(ruta){ return /^(data|blob):/.test(ruta) ? ruta : BASE + ruta; }
+function recetas(){ return (CRUCE.mapa.recetas || [CRUCE.mapa.receta]).map(function(id){ return porId('recetas_composer', id); }).filter(Boolean); }
+
+// imágenes (DAM, props o de la compu): una sola carga por ruta; al llegar, se repinta
+function imagen(ruta){
+  if(!ruta) return null;
+  if(!IMG[ruta]){ var im = new Image(); im.onload = function(){ if(ARBOL) refrescar(true); }; im.onerror = function(){ im.fallo = true; if(ARBOL) refrescar(true); }; im.src = src(ruta); IMG[ruta] = im; }
+  return IMG[ruta];
+}
+
+// ── 1 · LEY + DATOS → ÁRBOL (misma forma que davar/ir.py) ───────────────────
+var NID = 0;
+function nodo(tag, role, data, children){ return {tag:tag, text:'', role:role, classes:[], attrs:{}, data:data||{}, children:children||[], nid:++NID}; }
+function construirArbol(recetaId, datosId, formatoId){
+  NID = 0;
+  var receta = porId('recetas_composer', recetaId), datos = receta && porId(receta.datos, datosId), fmt = porId('formatos', formatoId);
+  if(!receta || !datos || !fmt) throw new Error('Falta receta, datos o formato en la semilla.');
+  var raiz = porId('modulos_codigo', receta.modulo), orient = orientacion(fmt);
+  var capas = (raiz.hijos || []).map(function(h){
+    var m = porId('modulos_codigo', h.modulo), campos = {};
+    Object.keys(h.campos).forEach(function(k){ campos[k] = datos[h.campos[k]]; });
+    return nodo('capa', m.tipo === 'fondo' ? 'fondo' : m.tipo, {modulo:m.id, alefato:m.alefato, z:h.z, caja:h.caja[orient].slice(),
+      choca:!!m.choca, zona:!!m.zona, campos:campos});
+  });
+  return nodo('pieza', 'pieza', {receta:receta.id, modulo:raiz.id, datos:datos.id, nodo:CRUCE.nodo, titulo:datos.compania || datos.id,
+    formato:{id:fmt.id, w:fmt.w, h:fmt.h}, orientacion:orient,
+    f2:{necesidad:datos.necesidad || '', distanciamiento:datos.distanciamiento || ''},
+    version:{estilo:datos.estilo || '', epoca:datos.epoca || '', lugar:datos.lugar || ''}}, capas);
+}
+function sigNid(a){ return a.children.reduce(function(m, n){ return Math.max(m, n.nid); }, a.nid) + 1; }
+function zArriba(a){ return a.children.reduce(function(m, n){ return Math.max(m, n.data.z); }, 0) + 10; }
+function nuevaCapa(modulo, campos, caja){
+  var m = porId('modulos_codigo', modulo); if(!m) { aviso('<b>NO</b> · el registro no trae ' + esc(modulo) + '.'); return null; }
+  var n = {tag:'capa', text:'', role:m.tipo, classes:[], attrs:{}, nid:sigNid(ARBOL),
+    data:{modulo:m.id, alefato:m.alefato || '', z:zArriba(ARBOL), caja:caja.map(r3), choca:!!m.choca, zona:!!m.zona, campos:campos}};
+  ARBOL.children.push(n); return n;
+}
+
+// ── 2 · UN SOLO RENDER (vista, capas en Z y exportación) ────────────────────
+var METRICAS = {};
+function renglones(ctx, texto, ancho){
+  var palabras = String(texto || '').split(/\s+/).filter(Boolean), lineas = [], linea = '';
+  palabras.forEach(function(p){ var prueba = linea ? linea + ' ' + p : p; if(ctx.measureText(prueba).width > ancho && linea){ lineas.push(linea); linea = p; } else linea = prueba; });
+  if(linea) lineas.push(linea); return {palabras:palabras, lineas:lineas};
+}
+/* 19 oct · LECTURA A DEL CODEC: el Composer ya no sabe pintar módulos. Cada módulo es una PALABRA (palabras_pintura.json, del codec);
+   codec_runtime/pinta.js la vuelve LISTA DE DIBUJO y aquí sólo se dibujan las 6 letras. El render por módulo de antes vive en mecanismo_v5_respaldo.html. */
+var PALABRAS = {}; try { PALABRAS = JSON.parse(document.getElementById('palabras').textContent).modulos || {}; } catch(e) { PALABRAS = {}; }
+function gota(ctx, x, y, w, h, col, rebote){
+  var s = Math.min(w, h), cx = x + w/2, cy = y + h*0.58 - rebote, r = s*0.36, lw = Math.max(3, s*0.035);
+  ctx.save(); ctx.lineJoin = 'round'; ctx.lineWidth = lw; ctx.strokeStyle = sombra(col, 0.45); ctx.fillStyle = col;
+  ctx.beginPath(); ctx.moveTo(cx, cy - r*1.75);
+  ctx.bezierCurveTo(cx + r*0.35, cy - r*1.1, cx + r, cy - r*0.55, cx + r, cy);
+  ctx.arc(cx, cy, r, 0, Math.PI, false);
+  ctx.bezierCurveTo(cx - r, cy - r*0.55, cx - r*0.35, cy - r*1.1, cx, cy - r*1.75);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.beginPath(); ctx.ellipse(cx - r*0.42, cy - r*0.35, r*0.12, r*0.28, -0.4, 0, Math.PI*2); ctx.fill();
+  [-1, 1].forEach(function(sx){ ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(cx + sx*r*0.32, cy - r*0.05, r*0.17, r*0.22, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#1a1a1a'; ctx.beginPath(); ctx.arc(cx + sx*r*0.32 + r*0.04, cy, r*0.08, 0, Math.PI*2); ctx.fill(); });
+  ctx.beginPath(); ctx.arc(cx, cy + r*0.28, r*0.26, 0.15*Math.PI, 0.85*Math.PI); ctx.stroke();
+  ctx.restore();
+}
+var PINTA = {
+  // 𐤁 contener: caja con relleno (y borde/radio si la palabra los pide)
+  '𐤁': function(ctx, it, W, H){ var c = it.caja, p = it.p, x = c[0]*W, y = c[1]*H, w = c[2]*W, h = c[3]*H;
+    if(!p.radio && !p.borde){ ctx.fillStyle = p.relleno; ctx.fillRect(x, y, w, h); return; }
+    var s = Math.min(W, H); ctx.save(); ctx.lineWidth = Math.max(2, s*(p.grosor || 0)); ctx.lineJoin = 'round'; ctx.strokeStyle = p.borde || 'transparent'; ctx.fillStyle = p.relleno || 'transparent';
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, s*(p.radio || 0)); ctx.fill(); if(p.borde) ctx.stroke(); ctx.restore(); },
+  // 𐤏 percibir: imagen del DAM dentro de la caja
+  '𐤏': function(ctx, it, W, H, t){ var c = it.caja, p = it.p, x = c[0]*W, y = c[1]*H, w = c[2]*W, h = c[3]*H, im = imagen(p.ruta);
+    var reb = p.rebote ? Math.sin(Math.min(t, 1) * Math.PI) * h * p.rebote : 0;
+    if(im && im.complete && im.naturalWidth){ var k = (p.encaje === 'cubrir' ? Math.max : Math.min)(w / im.naturalWidth, h / im.naturalHeight);
+      ctx.drawImage(im, x + (w - im.naturalWidth*k)/2, y + (h - im.naturalHeight*k)/2 - reb, im.naturalWidth*k, im.naturalHeight*k); return; }
+    if(p.si_falta === 'gota'){ gota(ctx, x, y, w, h, p.color, reb); return; }
+    if(!p.marco_si_falta) return;
+    ctx.save(); ctx.strokeStyle = 'rgba(236,231,220,.6)'; ctx.setLineDash([8, 6]); ctx.lineWidth = Math.max(2, Math.min(W, H)*0.004); ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = 'rgba(236,231,220,.75)'; ctx.font = '700 ' + Math.max(10, Math.min(W, H)*0.025) + 'px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText(im && im.fallo ? 'no está en esta copia' : 'cargando…', x + w/2, y + h/2); ctx.restore(); },
+  // 𐤍 perpetuar: la forma instanciada sin imagen (la gota de prueba)
+  '𐤍': function(ctx, it, W, H, t){ var c = it.caja, h = c[3]*H; gota(ctx, c[0]*W, c[1]*H, c[2]*W, h, it.p.color, it.p.rebote ? Math.sin(Math.min(t, 1) * Math.PI) * h * it.p.rebote : 0); },
+  // 𐤅 conectar: el pico de la caja hacia otra capa
+  '𐤅': function(ctx, it, W, H){ var c = it.caja, p = it.p, m = p.hacia_caja; if(!m) return;
+    var x = c[0]*W, y = c[1]*H, w = c[2]*W, h = c[3]*H, s = Math.min(W, H), rad = s*(p.radio || 0.04), lw = Math.max(2, s*(p.grosor || 0.007));
+    ctx.save(); ctx.lineWidth = lw; ctx.lineJoin = 'round'; ctx.strokeStyle = p.borde; ctx.fillStyle = p.relleno;
+    var mx = (m[0] + m[2]/2)*W, my = m[1]*H, abajo = my > y + h, bx = Math.max(x + rad*2, Math.min(x + w - rad*2, mx));
+    ctx.beginPath(); if(abajo){ ctx.moveTo(bx - s*0.03, y + h - lw); ctx.lineTo(bx + (mx - bx)*0.3, y + h + s*0.06); ctx.lineTo(bx + s*0.03, y + h - lw); }
+    else { var by = Math.max(y + rad*2, Math.min(y + h - rad*2, (m[1] + m[3]/2)*H)); ctx.moveTo(x + lw, by - s*0.03); ctx.lineTo(x - s*0.06, by); ctx.lineTo(x + lw, by + s*0.03); }
+    ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); },
+  // 𐤐 expresar: texto en la caja (una línea: firma · con margen: globo · libre: texto)
+  '𐤐': function(ctx, it, W, H, t){ var c = it.caja, p = it.p, x = c[0]*W, y = c[1]*H, w = c[2]*W, h = c[3]*H, s = Math.min(W, H);
+    if(p.una_linea){ var tm = Math.min(h*(p.tam_alto || 0.7), s*(p.tam || 0.04));
+      ctx.save(); ctx.font = (p.peso || '700') + ' ' + tm + 'px system-ui, "Segoe UI", sans-serif'; ctx.fillStyle = p.color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      if('letterSpacing' in ctx) ctx.letterSpacing = (tm*(p.espaciado || 0)) + 'px';
+      ctx.fillText(String(p.texto || ''), x + w/2, y + h/2);
+      METRICAS[it.nid] = {cabe: ctx.measureText(String(p.texto || '')).width <= w}; ctx.restore(); return; }
+    var pad = s*(p.pad || 0), tam = clamp(+p.tam || 0.06, 0.01, 0.3)*s, al = p.alinear || 'center', tol = p.pad ? 0 : 0.5;
+    ctx.save(); ctx.font = (p.peso || '900') + ' ' + tam + 'px ' + (p.pad ? 'system-ui, "Segoe UI", sans-serif' : familiaCss(p.fuente));
+    var rr2 = renglones(ctx, p.texto, w - pad*2), lh = tam*(p.interlineado || 1.12), alto = rr2.lineas.length*lh;
+    var cabe = alto <= h - pad*2 + tol && rr2.lineas.every(function(l){ return ctx.measureText(l).width <= w - pad*2 + tol; });
+    METRICAS[it.nid] = {cabe:cabe, lineas:rr2.lineas.length, alto_px:Math.round(alto), caja_px:Math.round(h - pad*2)};
+    var vis = p.cinetico ? Math.ceil(Math.min(1, t) * rr2.palabras.length) : rr2.palabras.length, k = 0;
+    var y0 = y + (p.arriba_si_no_cabe ? Math.max(0, (h - alto)/2) : (h - alto)/2) + tam*(p.base || 0.9);
+    ctx.fillStyle = p.color || '#ece7dc'; ctx.textAlign = 'left';
+    rr2.lineas.forEach(function(l, i){ var ws = l.split(' '), ancho = ctx.measureText(l).width;
+      var cx = al === 'left' ? x + pad : al === 'right' ? x + w - pad - ancho : x + (w - ancho)/2;
+      ws.forEach(function(q){ k++; if(k <= vis){ var dy = (p.salto && k === vis && t < 1) ? tam*p.salto : 0; ctx.fillText(q, cx, y0 + i*lh + dy); }
+        cx += ctx.measureText(q + ' ').width; }); });
+    ctx.restore(); },
+  // 𐤔 transformar: el dispositivo girado en perspectiva (mockup)
+  '𐤔': function(ctx, it, W, H){ var c = it.caja; pintarMockup(ctx, it.p, c[0]*W, c[1]*H, c[2]*W, c[3]*H); }
+};
+// E19 · MC-MOCKUP: un dispositivo dibujado (tinta y latón, sin marcas reales) con una imagen en su pantalla, girado en perspectiva simple
+function familiaCss(f){ return f === 'disp' ? "Bahnschrift, 'Arial Narrow', system-ui, sans-serif" : (!f || f === 'sys') ? "system-ui, 'Segoe UI', sans-serif" : "'" + String(f).replace(/'/g, '') + "', system-ui, sans-serif"; }
+var DISPOSITIVOS = {
+  laptop:{nombre:'Laptop', aspecto:1.5, pantalla:[0.12, 0.045, 0.76, 0.755]},
+  celular:{nombre:'Celular', aspecto:0.49, pantalla:[0.05, 0.025, 0.9, 0.95]},
+  pc:{nombre:'PC', aspecto:1.3, pantalla:[0.035, 0.045, 0.93, 0.69]}
+};
+function rr(ctx, x, y, w, h, r){ ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function planoMockup(f, lado){
+  var d = DISPOSITIVOS[f.dispositivo] || DISPOSITIVOS.laptop, W = Math.round(d.aspecto >= 1 ? lado : lado * d.aspecto), H = Math.round(d.aspecto >= 1 ? lado / d.aspecto : lado);
+  var cv = document.createElement('canvas'); cv.width = W; cv.height = H; var ctx = cv.getContext('2d'), cuerpo = f.color || '#1b212c', laton = '#d4b24c', lw = Math.max(1.5, W*0.006);
+  ctx.lineWidth = lw; ctx.strokeStyle = laton; ctx.fillStyle = cuerpo;
+  if(f.dispositivo === 'celular'){ rr(ctx, lw, lw, W - 2*lw, H - 2*lw, W*0.12); ctx.fill(); ctx.stroke(); }
+  else if(f.dispositivo === 'pc'){ rr(ctx, lw, lw, W - 2*lw, H*0.78, W*0.025); ctx.fill(); ctx.stroke();
+    ctx.fillRect(W*0.45, H*0.78, W*0.1, H*0.15); ctx.strokeRect(W*0.45, H*0.78, W*0.1, H*0.15); rr(ctx, W*0.28, H*0.92, W*0.44, H*0.06, H*0.02); ctx.fill(); ctx.stroke(); }
+  else { rr(ctx, W*0.09, lw, W*0.82, H*0.85, W*0.025); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W*0.03, H*0.86); ctx.lineTo(W*0.97, H*0.86); ctx.lineTo(W - lw, H*0.95); ctx.quadraticCurveTo(W*0.5, H - lw, lw, H*0.95); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = laton; ctx.fillRect(W*0.44, H*0.86, W*0.12, H*0.012); ctx.fillStyle = cuerpo; }
+  var p = d.pantalla, sx = p[0]*W, sy = p[1]*H, sw = p[2]*W, sh = p[3]*H, rad = f.dispositivo === 'celular' ? W*0.09 : W*0.008;
+  ctx.save(); rr(ctx, sx, sy, sw, sh, rad); ctx.fillStyle = '#05070a'; ctx.fill(); ctx.clip();
+  var im = imagen(f.ruta);
+  if(im && im.complete && im.naturalWidth){ var k = Math.max(sw / im.naturalWidth, sh / im.naturalHeight); ctx.drawImage(im, sx + (sw - im.naturalWidth*k)/2, sy + (sh - im.naturalHeight*k)/2, im.naturalWidth*k, im.naturalHeight*k); }
+  else { ctx.fillStyle = 'rgba(236,231,220,.6)'; ctx.font = '700 ' + Math.round(sh*0.08) + 'px system-ui'; ctx.textAlign = 'center'; ctx.fillText(im && im.fallo ? 'sin imagen' : 'cargando…', sx + sw/2, sy + sh/2); }
+  var g = ctx.createLinearGradient(sx, sy, sx + sw, sy + sh); g.addColorStop(0, 'rgba(255,255,255,.10)'); g.addColorStop(0.45, 'rgba(255,255,255,0)'); ctx.fillStyle = g; ctx.fillRect(sx, sy, sw, sh);
+  ctx.restore();
+  if(f.dispositivo === 'celular'){ ctx.fillStyle = '#000'; rr(ctx, W*0.38, H*0.038, W*0.24, H*0.022, H*0.011); ctx.fill(); }
+  return cv;
+}
+// perspectiva simple: giro (eje Y) e inclinación (eje X) en grados; cada punto de una malla 12×12 se proyecta y cada triángulo se pinta afín
+function proyectar(Fw, Fh, giro, inclina){
+  var gy = (+giro || 0)*Math.PI/180, gx = (+inclina || 0)*Math.PI/180, dd = 2.4*Math.max(Fw, Fh), N = 12, P = [];
+  for(var j = 0; j <= N; j++) for(var i = 0; i <= N; i++){ var x = (i/N - 0.5)*Fw, y = (j/N - 0.5)*Fh, z = 0;
+    var x1 = x*Math.cos(gy) + z*Math.sin(gy), z1 = -x*Math.sin(gy) + z*Math.cos(gy), y1 = y*Math.cos(gx) - z1*Math.sin(gx), z2 = y*Math.sin(gx) + z1*Math.cos(gx), k = dd / (dd + z2);
+    P.push([x1*k, y1*k]); }
+  var xs = P.map(function(q){ return q[0]; }), ys = P.map(function(q){ return q[1]; });
+  return {N:N, P:P, x0:Math.min.apply(null, xs), y0:Math.min.apply(null, ys), w:Math.max.apply(null, xs) - Math.min.apply(null, xs), h:Math.max.apply(null, ys) - Math.min.apply(null, ys)};
+}
+function triangulo(ctx, img, s, d){
+  var cx = (d[0][0] + d[1][0] + d[2][0])/3, cy = (d[0][1] + d[1][1] + d[2][1])/3;
+  ctx.save(); ctx.beginPath(); d.forEach(function(q, i){ var ex = q[0] + (q[0] - cx)*0.04, ey = q[1] + (q[1] - cy)*0.04; if(i) ctx.lineTo(ex, ey); else ctx.moveTo(ex, ey); }); ctx.closePath(); ctx.clip();
+  var x0 = s[0][0], y0 = s[0][1], x1 = s[1][0], y1 = s[1][1], x2 = s[2][0], y2 = s[2][1], den = (x1 - x0)*(y2 - y0) - (x2 - x0)*(y1 - y0); if(!den){ ctx.restore(); return; }
+  var a = ((d[1][0] - d[0][0])*(y2 - y0) - (d[2][0] - d[0][0])*(y1 - y0))/den, b = ((d[2][0] - d[0][0])*(x1 - x0) - (d[1][0] - d[0][0])*(x2 - x0))/den;
+  var c2 = ((d[1][1] - d[0][1])*(y2 - y0) - (d[2][1] - d[0][1])*(y1 - y0))/den, d2 = ((d[2][1] - d[0][1])*(x1 - x0) - (d[1][1] - d[0][1])*(x2 - x0))/den;
+  ctx.transform(a, c2, b, d2, d[0][0] - a*x0 - b*y0, d[0][1] - c2*x0 - d2*y0); ctx.drawImage(img, 0, 0); ctx.restore();
+}
+function pintarMockup(ctx, f, x, y, w, h){
+  var lado = Math.min(1600, Math.max(120, Math.round(Math.max(w, h)))), F = planoMockup(f, lado), pr = proyectar(F.width, F.height, f.giro, f.inclina);
+  var k = Math.min(w / pr.w, h / pr.h), ox = x + (w - pr.w*k)/2 - pr.x0*k, oy = y + (h - pr.h*k)/2 - pr.y0*k, N = pr.N, P = pr.P;
+  function sp(i, j){ return [i/N*F.width, j/N*F.height]; } function dp(i, j){ var q = P[j*(N + 1) + i]; return [ox + q[0]*k, oy + q[1]*k]; }
+  if(!(+f.giro) && !(+f.inclina)){ ctx.drawImage(F, ox + pr.x0*k, oy + pr.y0*k, pr.w*k, pr.h*k); return; }
+  for(var j = 0; j < N; j++) for(var i = 0; i < N; i++){
+    triangulo(ctx, F, [sp(i, j), sp(i + 1, j), sp(i, j + 1)], [dp(i, j), dp(i + 1, j), dp(i, j + 1)]);
+    triangulo(ctx, F, [sp(i + 1, j), sp(i + 1, j + 1), sp(i, j + 1)], [dp(i + 1, j), dp(i + 1, j + 1), dp(i, j + 1)]); }
+}
+function mockupPNG(f, lado){ var F = planoMockup(f, 200), pr = proyectar(F.width, F.height, f.giro, f.inclina), a = pr.w / pr.h;
+  var cv = document.createElement('canvas'); cv.width = Math.round(a >= 1 ? lado : lado*a); cv.height = Math.round(a >= 1 ? lado/a : lado);
+  pintarMockup(cv.getContext('2d'), f, 0, 0, cv.width, cv.height); return cv; }
+function pintar(ctx, arbol, W, H, t, solo){
+  if(!solo) METRICAS = {};
+  CODEC_PINTA.lista(arbol, PALABRAS).forEach(function(it){
+    if(solo && it.nid !== solo) return;
+    var f = PINTA[it.op]; if(f) f(ctx, it, W, H, t == null ? 1 : t, arbol); });
+}
+
+// ── 3 · KAREN · las pruebas que declara ley_capas ───────────────────────────
+var PRUEBAS = {
+  k_fondo: function(a){ var f = a.children.filter(function(n){ return n.role === 'fondo'; });
+    if(f.length !== 1) return {msg:'hay ' + f.length + ' fondos', capas:f};
+    var c = f[0].data.caja; if(f[0].data.z !== 0 || c.join() !== '0,0,1,1') return {msg:'el fondo no está en z = 0 cubriendo el cuadro', capas:f}; },
+  k_orden: function(a){ var zs = a.children.map(function(n){ return n.data.z; });
+    if(zs.some(function(z){ return z !== Math.round(z); })) return {msg:'hay z no enteros', capas:[]};
+    var rep = zs.filter(function(z, i){ return zs.indexOf(z) !== i; });
+    if(rep.length) return {msg:'z repetido: ' + rep.join(', '), capas:a.children.filter(function(n){ return rep.indexOf(n.data.z) >= 0; })}; },
+  k_choque: function(a){ var cs = a.children.filter(function(n){ return n.data.choca; }), out = [], cap = [];
+    for(var i = 0; i < cs.length; i++) for(var j = i + 1; j < cs.length; j++) if(inter(cs[i].data.caja, cs[j].data.caja)){ out.push(cs[i].data.modulo + ' × ' + cs[j].data.modulo); cap.push(cs[i], cs[j]); }
+    if(out.length) return {msg:'chocan: ' + out.join(' · '), capas:cap}; },
+  k_zona: function(a){ var fmt = porId('formatos', a.data.formato.id), out = [], cap = [];
+    a.children.filter(function(n){ return n.data.zona; }).forEach(function(n){ ((fmt && fmt.zonas) || []).forEach(function(zz){
+      if(inter(n.data.caja, [zz.x || 0, zz.y || 0, zz.w == null ? 1 : zz.w, zz.h])){ out.push(n.data.modulo + ' en «' + zz.label + '»'); cap.push(n); } }); });
+    if(out.length) return {msg:out.join(' · '), capas:cap}; },
+  k_unidad: function(a){ var mal = a.children.filter(function(n){ var c = n.data.caja; return !c || c.length !== 4 || c.some(function(v){ return v < 0 || v > 1; }) || c[0] + c[2] > 1.0001 || c[1] + c[3] > 1.0001; });
+    if(mal.length) return {msg:'cajas fuera de 0–1: ' + mal.map(function(n){ return n.data.modulo; }).join(', '), capas:mal}; },
+  k_cabe: function(a){ var mal = a.children.filter(function(n){ return METRICAS[n.nid] && !METRICAS[n.nid].cabe; });
+    if(mal.length) return {msg:'no cabe: ' + mal.map(function(n){ return n.data.modulo; }).join(', '), capas:mal}; },
+  k_f2: function(a){ if(!String(a.data.f2.necesidad || '').trim() || !String(a.data.f2.distanciamiento || '').trim()) return {msg:'falta necesidad o distanciamiento (escríbelos en la ficha de la pieza)', capas:[]}; }
+};
+function karen(arbol){
+  return filas('ley_capas').map(function(l){ var p = PRUEBAS[l.prueba];
+    if(!p) return {ley:l.id, nombre:l.nombre, ok:false, detalle:'el Composer no sabe correr «' + l.prueba + '»', capas:[]};
+    var e = p(arbol); return {ley:l.id, nombre:l.nombre, regla:l.regla, ok:!e, detalle:e ? e.msg : '', capas:e ? e.capas.map(function(n){ return n.nid; }) : []}; })
+  .concat(arbol.children.filter(function(n){ return !PALABRAS[n.data.modulo]; }).map(function(n){
+    return {ley:'modulos_codigo', nombre:'Renderer', ok:false, detalle:'nadie sabe pintar ' + n.data.modulo, capas:[n.nid]}; }));
+}
+
+// ── 4 · exportar ────────────────────────────────────────────────────────────
+function lienzoA(arbol, t){ var f = arbol.data.formato, cv = document.createElement('canvas'); cv.width = f.w; cv.height = f.h;
+  pintar(cv.getContext('2d'), arbol, f.w, f.h, t); return cv; }
+function exportarArbol(a){
+  var cv = lienzoA(a, 1), k = karen(a), png = '';
+  try { png = cv.toDataURL('image/png'); } catch(e) { png = ''; }
+  return {arbol:a, karen:k, pasa:k.every(function(r){ return r.ok; }), png:png};
+}
+function exportarPNG(recetaId, datosId, formatoId){ return exportarArbol(construirArbol(recetaId, datosId, formatoId)); }
+function bajar(nombre, url){ var l = document.createElement('a'); l.href = url; l.download = nombre; document.body.appendChild(l); l.click(); l.remove(); }
+function limpio(s){ return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40); }
+function nombreDe(a){ return 'LS_' + (limpio(ESTADO.nombre) || a.data.receta + '_' + a.data.datos) + '_' + a.data.formato.id + '_' + a.data.formato.w + 'x' + a.data.formato.h; }
+function clonar(x){ return JSON.parse(JSON.stringify(x)); }
+
+// ── 5 · LA CARA ─────────────────────────────────────────────────────────────
+var anim = null, PILA = null, CAPAS_CV = {}, AVISO_T = null;
+function aviso(html, ok){ var a = $('aviso'); a.innerHTML = html; a.classList.toggle('ok', !!ok); a.classList.add('on'); clearTimeout(AVISO_T); AVISO_T = setTimeout(function(){ a.classList.remove('on'); }, 3200); }
+function onda(btn, e){ if(REDUCIDO || !btn) return; var r = btn.getBoundingClientRect(), d = Math.max(r.width, r.height)*2, o = document.createElement('i');
+  o.className = 'onda'; o.style.width = o.style.height = d + 'px'; o.style.left = ((e && e.clientX || r.left + r.width/2) - r.left - d/2) + 'px';
+  o.style.top = ((e && e.clientY || r.top + r.height/2) - r.top - d/2) + 'px'; btn.appendChild(o); setTimeout(function(){ o.remove(); }, 450); }
+function listo(btn){ btn.classList.remove('listo'); void btn.offsetWidth; btn.classList.add('listo'); setTimeout(function(){ btn.classList.remove('listo'); }, 1250); }
+function corto(id){ return String(id || '').replace(/^MC-/, '').split('-')[0]; }
+function etiqueta(n){ var c = n.data.campos || {};
+  if(n.data.modulo === 'MC-IMAGEN') return c.nombre || 'imagen';
+  if(n.data.modulo === 'MC-TEXTO') return '«' + String(c.texto || '').slice(0, 22) + '»';
+  return corto(n.data.modulo); }
+
+function medida(f){ var m = $('escena').getBoundingClientRect(), mw = m.width*0.9, mh = m.height*0.9;
+  var k = Math.min(mw / f.w, mh / f.h); return {w:Math.max(40, Math.round(f.w*k)), h:Math.max(40, Math.round(f.h*k))}; }
+
+function montarPila(){
+  var a = ARBOL, f = a.data.formato, md = medida(f), dpr = Math.min(2, window.devicePixelRatio || 1);
+  var escenaEl = $('escena'); escenaEl.innerHTML = '';
+  var ped = document.createElement('div'); ped.className = 'pedestal'; escenaEl.appendChild(ped);
+  PILA = document.createElement('div'); PILA.className = 'pila'; PILA.id = 'pila'; PILA.style.width = md.w + 'px'; PILA.style.height = md.h + 'px';
+  CAPAS_CV = {};
+  a.children.slice().sort(function(x, y){ return x.data.z - y.data.z; }).forEach(function(n, i){
+    var cv = document.createElement('canvas'); cv.width = Math.round(md.w*dpr); cv.height = Math.round(md.h*dpr);
+    if(n.role === 'fondo') cv.className = 'fondo'; cv.dataset.nid = n.nid; cv.dataset.i = i; PILA.appendChild(cv); CAPAS_CV[n.nid] = cv;
+    var etq = document.createElement('div'); etq.className = 'etq'; etq.dataset.i = i; etq.dataset.nid = n.nid;
+    etq.dataset.html = '<span>z' + n.data.z + '</span>' + (n.data.alefato ? '<span class="g">' + n.data.alefato + '</span>' : '') + esc(etiqueta(n));
+    PILA.appendChild(etq);
+  });
+  var marcas = document.createElement('div'); marcas.className = 'marcas'; marcas.id = 'marcas';
+  a.children.forEach(function(n){ var d = document.createElement('div'); d.dataset.nid = n.nid; if(n.role !== 'fondo') d.classList.add('mueve');
+    d.innerHTML = '<i class="asa" data-nid="' + n.nid + '" title="Arrastra para cambiar el tamaño"></i>'; marcas.appendChild(d); });
+  PILA.appendChild(marcas);
+  var ret = document.createElement('div'); ret.className = 'reticula'; ret.innerHTML = '<i></i><i></i><i></i><i></i>'; PILA.appendChild(ret);
+  escenaEl.appendChild(PILA);
+  var ll = document.createElement('div'); ll.className = 'llamadas'; ll.id = 'llamadas'; escenaEl.appendChild(ll);
+  var co = document.createElement('div'); co.className = 'corte'; co.id = 'corte'; co.innerHTML = '<i></i><i></i>'; escenaEl.appendChild(co);
+  mano(PILA);
+  actualizarMarcas(); pintarPila(ESTADO.t); posicionarPila();
+}
+function actualizarMarcas(){
+  [].forEach.call(document.querySelectorAll('#marcas > div'), function(d){ var n = capaPorNid(+d.dataset.nid); if(!n) return; var c = n.data.caja;
+    d.style.left = (c[0]*100) + '%'; d.style.top = (c[1]*100) + '%'; d.style.width = (c[2]*100) + '%'; d.style.height = (c[3]*100) + '%'; });
+}
+function pintarPila(t){
+  var a = ARBOL; METRICAS = {};
+  a.children.forEach(function(n){ var cv = CAPAS_CV[n.nid]; if(!cv) return; var ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, cv.width, cv.height); pintar(ctx, a, cv.width, cv.height, t, n.nid); });
+}
+function capaPorNid(nid){ return ARBOL.children.filter(function(n){ return n.nid === nid; })[0]; }
+
+// la mano en la pieza: tocar elige, arrastrar mueve, la asa escala (sólo en plano; en Z sólo elige)
+function mano(pila){
+  var g = null, raf = 0;
+  function fr(e){ var r = pila.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; }
+  pila.addEventListener('pointerdown', function(e){
+    if(e.button > 0) return;
+    var asa = e.target.closest('.asa');
+    if(ESTADO.explotada){ var c = e.target.closest('canvas'); if(!c) return;
+      var fx = e.offsetX / c.clientWidth, fy = e.offsetY / c.clientHeight, dentro = function(n){ var k = n.data.caja; return fx >= k[0] && fx <= k[0] + k[2] && fy >= k[1] && fy <= k[1] + k[3]; };
+      var propia = capaPorNid(+c.dataset.nid), gana = (propia && propia.role !== 'fondo' && dentro(propia)) ? propia : ARBOL.children.slice().sort(function(a, b){ return b.data.z - a.data.z; }).filter(dentro)[0];
+      if(gana){ ESTADO.capa = gana.nid === ESTADO.capa ? null : gana.nid; marcarSeleccion(); } return; }
+    var p = fr(e), n;
+    if(asa) n = capaPorNid(+asa.dataset.nid);
+    else { var bajo = ARBOL.children.slice().sort(function(a, b){ return b.data.z - a.data.z; }).filter(function(k){ var c = k.data.caja; return p[0] >= c[0] && p[0] <= c[0] + c[2] && p[1] >= c[1] && p[1] <= c[1] + c[3]; });
+      n = bajo.filter(function(k){ return k.role !== 'fondo'; })[0] || bajo[0]; }
+    if(!n) return;
+    if(ESTADO.capa !== n.nid){ ESTADO.capa = n.nid; marcarSeleccion(); }
+    if(n.role === 'fondo') return;
+    e.preventDefault(); pila.setPointerCapture(e.pointerId);
+    g = {n:n, p0:p, c0:n.data.caja.slice(), modo:asa ? 'escala' : 'mueve', movio:false};
+  });
+  pila.addEventListener('pointermove', function(e){
+    if(!g) return; var p = fr(e), dx = p[0] - g.p0[0], dy = p[1] - g.p0[1], c = g.c0, k;
+    if(!g.movio && Math.abs(dx) + Math.abs(dy) < 0.004) return;
+    g.movio = true; pila.classList.add('arrastra');
+    if(g.modo === 'mueve') k = [clamp(c[0] + dx, 0, 1 - c[2]), clamp(c[1] + dy, 0, 1 - c[3]), c[2], c[3]];
+    else { var w = clamp(c[2] + dx, 0.03, 1 - c[0]), h = g.n.data.modulo === 'MC-IMAGEN' && !e.shiftKey ? c[3] * w / c[2] : clamp(c[3] + dy, 0.03, 1 - c[1]);
+      if(c[1] + h > 1){ h = 1 - c[1]; if(g.n.data.modulo === 'MC-IMAGEN' && !e.shiftKey) w = c[2] * h / c[3]; }
+      k = [c[0], c[1], w, h]; }
+    g.n.data.caja = k.map(r3);
+    if(!raf) raf = requestAnimationFrame(function(){ raf = 0; actualizarMarcas(); pintarPila(ESTADO.t); });
+  });
+  function suelta(){ if(!g) return; var movio = g.movio; g = null; pila.classList.remove('arrastra');
+    if(movio){ ESTADO.editado = true; refrescar(); ficha(); } }
+  pila.addEventListener('pointerup', suelta); pila.addEventListener('pointercancel', suelta);
+}
+function posicionarPila(){
+  if(!PILA) return; var n = ARBOL.children.length, gap = Math.min(110, PILA.offsetHeight*0.15), ex = ESTADO.explotada;
+  PILA.style.transform = ex ? 'translateX(-40px) scale(.78) rotateX(56deg) rotateZ(-34deg) translateZ(-' + (gap*(n-1)/2) + 'px)' : 'none';
+  [].forEach.call(PILA.querySelectorAll('canvas'), function(cv){ var i = +cv.dataset.i, sel = +cv.dataset.nid === ESTADO.capa;
+    cv.style.transform = ex ? 'translateZ(' + (i*gap + (sel ? 28 : 0)) + 'px)' : 'none';
+    cv.style.opacity = ex && ESTADO.capa && !sel && cv.className !== 'fondo' ? .75 : 1;
+    cv.style.boxShadow = ex ? (sel ? '0 0 0 3px var(--acc), 0 0 50px var(--acc-glow)' : '0 0 0 1px color-mix(in srgb, var(--crema) 30%, transparent)') : ''; });
+  [].forEach.call(PILA.querySelectorAll('.etq'), function(e){ var i = +e.dataset.i, sel = +e.dataset.nid === ESTADO.capa;
+    e.style.transform = ex ? 'translateZ(' + (i*gap + (sel ? 28 : 0)) + 'px)' : 'none'; });
+  $('marcas').style.transform = ex ? 'translateZ(' + (n*gap) + 'px)' : 'none';
+  seguirLlamadas();
+}
+var LLAMA_HASTA = 0;
+function seguirLlamadas(){ var fin = performance.now() + (REDUCIDO ? 0 : 520), corre = LLAMA_HASTA > performance.now(); LLAMA_HASTA = Math.max(LLAMA_HASTA, fin);
+  if(corre) return; (function paso(){ llamadas(); if(performance.now() < LLAMA_HASTA) requestAnimationFrame(paso); })(); }
+function llamadas(){
+  var cont = $('llamadas'); if(!cont || !PILA) return;
+  if(!ESTADO.explotada){ cont.innerHTML = ''; return; }
+  var er = $('escena').getBoundingClientRect(), malas = KAREN.filter(function(r){ return !r.ok; });
+  var pts = [].map.call(PILA.querySelectorAll('.etq'), function(a){ var r = a.getBoundingClientRect(), nid = +a.dataset.nid;
+    return {x:r.left - er.left, y:r.top - er.top, html:a.dataset.html, on:nid === ESTADO.capa, mal:malas.some(function(k){ return k.capas.indexOf(nid) >= 0; })}; });
+  if(!pts.length) return;
+  var colX = Math.min(Math.max.apply(null, pts.map(function(p){ return p.x; })) + 50, er.width - 150);
+  pts.sort(function(a, b){ return a.y - b.y; });
+  pts.forEach(function(p, i){ p.ly = i ? Math.max(p.y, pts[i - 1].ly + 32) : p.y; });
+  cont.innerHTML = '<svg>' + pts.map(function(p){ var cls = p.mal ? 'mal' : (p.on ? 'on' : '');
+    return '<path class="' + cls + '" d="M' + p.x + ' ' + p.y + ' L' + (colX - 18) + ' ' + p.ly + ' L' + (colX - 4) + ' ' + p.ly + '"/><circle cx="' + p.x + '" cy="' + p.y + '" r="4"/>'; }).join('') + '</svg>' +
+    pts.map(function(p){ return '<div class="llamada' + (p.mal ? ' mal' : (p.on ? ' on' : '')) + '" style="left:' + colX + 'px;top:' + p.ly + 'px">' + p.html + '</div>'; }).join('');
+}
+function cortar(){ if(REDUCIDO) return; var c = $('corte'); if(!c) return; c.classList.remove('va'); void c.offsetWidth; c.classList.add('va');
+  setTimeout(function(){ c.classList.remove('va'); }, 520); }
+
+function seleccionar(nid){ ESTADO.capa = (ESTADO.capa === nid) ? null : nid; marcarSeleccion(); }
+function marcarSeleccion(){
+  [].forEach.call(document.querySelectorAll('#marcas > div'), function(d){ d.classList.toggle('on', +d.dataset.nid === ESTADO.capa); });
+  [].forEach.call(document.querySelectorAll('.it'), function(c){ c.classList.toggle('on', +c.dataset.nid === ESTADO.capa); });
+  posicionarPila(); ficha(); pintarZ(); if(ESTADO.modo === 'textos') pintarTextos();
+}
+function bar(nombre, v, x){ return '<dt>' + nombre + '</dt><dd class="bar"><u><i style="left:' + ((x || 0)*100) + '%;width:' + (v*100) + '%"></i></u><em>' + v.toFixed(2) + '</em></dd>'; }
+var CERRAR_FICHA = '<button class="cerrar-hoja" data-cierra aria-label="Cerrar">×</button>';
+function ficha(){
+  var cont = $('ficha'), a = ARBOL.data;
+  if(!ESTADO.capa || !capaPorNid(ESTADO.capa)){
+    cont.innerHTML = CERRAR_FICHA + '<div class="tag"><span class="g">𐤁</span>PIEZA · ' + esc(a.formato.id).toUpperCase() + ' · ' + a.formato.w + '×' + a.formato.h + '</div>' +
+      '<h2>' + esc(ESTADO.nombre || a.titulo || a.datos) + '</h2>' +
+      '<p>Toca una capa en la pieza para moverla (arrastra) o escalarla (el rombo). Pon material desde la columna de la izquierda (Plantillas · Textos · Props · Imágenes) o arrástralo a la pieza. Cuando esté lista: <b>Exportar</b>.</p>' +
+      '<label class="campo">NOMBRE DEL DISEÑO<input type="text" data-p="nombre" value="' + esc(ESTADO.nombre) + '" placeholder="' + esc(a.titulo || '') + '"></label>' +
+      '<details class="avanzado"><summary>AVANZADO · receta y por qué</summary><div class="f2"><b>NECESIDAD · F2</b><textarea rows="2" data-p="necesidad">' + esc(a.f2.necesidad) + '</textarea><b>DISTANCIAMIENTO · F2</b><textarea rows="2" data-p="distanciamiento">' + esc(a.f2.distanciamiento) + '</textarea></div>' +
+      '<dl><dt>RECETA</dt><dd>' + esc(a.receta) + ' · ' + esc(a.datos) + '</dd><dt>VERSIÓN</dt><dd>' + esc([a.version.estilo, a.version.epoca, a.version.lugar].filter(Boolean).join(' · ') || '—') + '</dd>' +
+      '<dt>CAPAS</dt><dd>' + ARBOL.children.length + ' en orden Z</dd><dt>ESTADO</dt><dd>' + (ESTADO.editado ? 'editado a mano' : 'como lo arma la receta') + '</dd></dl></details>';
+    return;
+  }
+  var n = capaPorNid(ESTADO.capa), m = porId('modulos_codigo', n.data.modulo) || {nombre:n.data.modulo, tipo:'?', lectura_b:''}, c = n.data.caja, fondo = n.role === 'fondo';
+  var campos = Object.keys(n.data.campos).map(function(k){ var v = n.data.campos[k], col = /^#[0-9a-f]{6}$/i.test(v || '');
+    if(col) return '<label class="campo">' + esc(k.replace(/_/g, ' ').toUpperCase()) + '<span class="fila-c"><input type="color" data-k="' + esc(k) + '" value="' + esc(v) + '">' + esc(v) + '</span></label>';
+    if(k === 'tam') return '<label class="campo">TAMAÑO DE LETRA · ' + (+v).toFixed(3) + '<input type="range" min="0.02" max="0.2" step="0.005" data-k="tam" value="' + esc(v) + '"></label>';
+    if(k === 'ruta') return '<label class="campo">IMAGEN</label><p style="word-break:break-all">' + esc(/^data:/.test(v || '') ? 'de tu compu (viaja dentro del diseño)' : (v || '— gota de prueba —')) + '</p>';
+    if(k === 'alinear') return '<label class="campo">ALINEAR<select data-k="alinear">' + ['left', 'center', 'right'].map(function(o){ return '<option' + (o === v ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select></label>';
+    if(k === 'fuente') return '<label class="campo">TIPOGRAFÍA<select data-k="fuente">' + [['disp', 'Display'], ['sys', 'Sistema']].concat(Object.keys(FUENTES).map(function(f){ return [f, f]; }))
+      .concat(v && v !== 'disp' && v !== 'sys' && !FUENTES[v] ? [[v, v + ' (no está en esta compu)']] : []).map(function(o){ return '<option value="' + esc(o[0]) + '"' + (o[0] === v ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select></label>';
+    if(k === 'dispositivo') return '<label class="campo">DISPOSITIVO<select data-k="dispositivo">' + Object.keys(DISPOSITIVOS).map(function(o){ return '<option value="' + o + '"' + (o === v ? ' selected' : '') + '>' + DISPOSITIVOS[o].nombre + '</option>'; }).join('') + '</select></label>';
+    if(k === 'giro' || k === 'inclina') return '<label class="campo">' + (k === 'giro' ? 'GIRO' : 'INCLINACIÓN') + ' · <span>' + (+v || 0) + '°</span><input type="range" min="-35" max="35" step="1" data-k="' + k + '" value="' + (+v || 0) + '"></label>';
+    if(k === 'nombre' && n.data.modulo === 'MC-MOCKUP') return '';
+    if(k === 'peso') return '';
+    return '<label class="campo">' + esc(k.replace(/_/g, ' ').toUpperCase()) + '<textarea rows="2" data-k="' + esc(k) + '">' + esc(v) + '</textarea></label>'; }).join('');
+  var orden = ARBOL.children.slice().sort(function(x, y){ return x.data.z - y.data.z; }), i = orden.indexOf(n);
+  var puedeImg = n.data.modulo === 'MC-IMAGEN' || n.data.modulo === 'MC-MASCOTA' || n.data.modulo === 'MC-MOCKUP';
+  cont.innerHTML = CERRAR_FICHA + '<div class="tag"><span class="g">' + (m.alefato || '·') + '</span>CAPA Z' + n.data.z + ' · ' + esc(m.tipo).toUpperCase() + '</div>' +
+    '<h2>' + esc(m.nombre) + '</h2><p>' + esc(m.lectura_b) + '</p>' +
+    (fondo ? '' : '<div class="ops"><button data-op="subir"' + (i >= orden.length - 1 ? ' disabled' : '') + '>Subir ▲</button><button data-op="bajar"' + (i <= 1 ? ' disabled' : '') + '>Bajar ▼</button>' +
+      '<button data-op="duplicar">Duplicar</button>' + (puedeImg ? '<button data-op="cambiar">Cambiar imagen</button>' : '') + (n.data.modulo === 'MC-MOCKUP' ? '<button data-op="prop">Guardar como prop</button>' : '') + '<button data-op="quitar" class="quita">Quitar</button></div>') +
+    campos +
+    (fondo ? '' : '<label class="chk"><input type="checkbox" data-b="choca"' + (n.data.choca ? ' checked' : '') + '> choca (entra a LC-NOCHOQUE)</label>' +
+      '<label class="chk"><input type="checkbox" data-b="zona"' + (n.data.zona ? ' checked' : '') + '> respeta las zonas del formato (LC-ZONA)</label>') +
+    '<dl>' + bar('X', c[0]) + bar('Y', c[1]) + bar('ANCHO', c[2], c[0]) + bar('ALTO', c[3], c[1]) + '</dl>';
+}
+function editarFicha(e){
+  var el = e.target, n = ESTADO.capa && capaPorNid(ESTADO.capa);
+  if(el.dataset.p){ if(el.dataset.p === 'nombre') ESTADO.nombre = el.value; else ARBOL.data.f2[el.dataset.p] = el.value;
+    ESTADO.editado = true; refrescar(true); return; }
+  if(!n) return;
+  if(el.dataset.k){ var nume = el.dataset.k === 'tam' || el.dataset.k === 'giro' || el.dataset.k === 'inclina'; n.data.campos[el.dataset.k] = nume ? +el.value : el.value; ESTADO.editado = true;
+    if(el.dataset.k === 'giro' || el.dataset.k === 'inclina') el.previousElementSibling.textContent = el.value + '°';
+    else if(el.type === 'range') el.parentNode.firstChild.textContent = 'TAMAÑO DE LETRA · ' + (+el.value).toFixed(3);
+    if(el.dataset.k === 'fuente' && ESTADO.modo === 'textos') pintarTextos();
+    if(el.type === 'color') el.nextSibling.textContent = el.value;
+    refrescar(); return; }
+  if(el.dataset.b){ n.data[el.dataset.b] = el.checked; ESTADO.editado = true; refrescar(); }
+}
+function operar(op){
+  var n = ESTADO.capa && capaPorNid(ESTADO.capa); if(!n || n.role === 'fondo') return;
+  var orden = ARBOL.children.slice().sort(function(x, y){ return x.data.z - y.data.z; }), i = orden.indexOf(n);
+  if(op === 'subir' && i < orden.length - 1){ var o = orden[i + 1], z = o.data.z; o.data.z = n.data.z; n.data.z = z; }
+  else if(op === 'bajar' && i > 1){ var u = orden[i - 1], z2 = u.data.z; u.data.z = n.data.z; n.data.z = z2; }
+  else if(op === 'duplicar'){ var d = clonar(n); d.nid = sigNid(ARBOL); d.data.z = zArriba(ARBOL); var c = d.data.caja;
+    d.data.caja = [r3(clamp(c[0] + .03, 0, 1 - c[2])), r3(clamp(c[1] + .03, 0, 1 - c[3])), c[2], c[3]]; ARBOL.children.push(d); ESTADO.capa = d.nid; }
+  else if(op === 'quitar'){ ARBOL.children.splice(ARBOL.children.indexOf(n), 1); ESTADO.capa = null; }
+  else if(op === 'cambiar'){ ESTADO.cambiar = true; if(ESTADO.modo !== 'props' && ESTADO.modo !== 'imagenes') irModo('imagenes'); abrirHoja('zInventario'); aviso('Elige en la columna la imagen nueva para esta capa.', true); return; }
+  else if(op === 'prop'){ guardarMockupProp(n.data.campos); return; }
+  else return;
+  ESTADO.editado = true; render(false);
+}
+function pintarKaren(){
+  var malas = KAREN.filter(function(r){ return !r.ok; }), box = $('karenBox');
+  box.classList.toggle('frena', malas.length > 0);
+  $('voz').innerHTML = malas.length ? 'Frena<small>' + malas.length + ' de ' + KAREN.length + ' reglas no pasan · no sale</small>' : 'Puede salir<small>Las ' + KAREN.length + ' reglas pasan</small>';
+  $('segs').innerHTML = KAREN.map(function(r, i){ return '<button class="' + (r.ok ? '' : 'no') + '" data-i="' + i + '" title="' + r.ley + ' · ' + esc(r.nombre) + (r.detalle ? ' — ' + esc(r.detalle) : '') + '" aria-label="' + r.ley + (r.ok ? ' pasa' : ' frena') + '"></button>'; }).join('');
+  var htmlF = malas.map(function(r){ return '<button class="falla" data-i="' + KAREN.indexOf(r) + '"><b>' + r.ley + ' · ' + esc(r.nombre).toUpperCase() + '</b><span>' + esc(r.detalle) + '</span></button>'; }).join('');
+  $('fallas').innerHTML = htmlF; $('fallasHoja').innerHTML = htmlF || '<p style="color:var(--txt-dim);font:600 13px system-ui">Las ' + KAREN.length + ' reglas pasan: puede salir.</p>';
+  $('dKaren').classList.toggle('mal', malas.length > 0);
+  var b = $('bPng'); b.setAttribute('aria-disabled', malas.length ? 'true' : 'false');
+  b.title = malas.length ? 'No sale: ' + malas.map(function(r){ return r.ley; }).join(', ') : '';
+  [].forEach.call(document.querySelectorAll('#marcas > div'), function(d){ d.classList.toggle('mal', malas.some(function(r){ return r.capas.indexOf(+d.dataset.nid) >= 0; })); });
+  [].forEach.call(document.querySelectorAll('.it'), function(c){ c.classList.toggle('mal', malas.some(function(r){ return r.capas.indexOf(+c.dataset.nid) >= 0; })); });
+  var fr = $('formatos').querySelector('.fm.on'); if(fr) fr.classList.toggle('frena', malas.length > 0);
+  llamadas();
+}
+function menuCapas(){
+  var html = ARBOL.children.slice().sort(function(a, b){ return b.data.z - a.data.z; }).map(function(n){
+    return '<button class="it' + (n.nid === ESTADO.capa ? ' on' : '') + '" data-nid="' + n.nid + '"><span class="g">' + (n.data.alefato || '·') + '</span><span class="n">' + esc(etiqueta(n)) + '</span><small>z' + n.data.z + '</small></button>'; }).join('');
+  $('capas').innerHTML = html; $('capasHoja').innerHTML = html;
+}
+function formatosDe(){ var r = porId('recetas_composer', ARBOL.data.receta) || recetas()[0]; return r.formatos; }
+function formatos(){
+  $('formatos').innerHTML = '<button class="q" aria-label="Formato anterior">Q</button>' + formatosDe().map(function(id, i){ var f = porId('formatos', id); if(!f) return ''; var k = 16 / Math.max(f.w, f.h);
+    return '<button class="fm' + (id === ARBOL.data.formato.id ? ' on' : '') + '" data-id="' + id + '" title="' + (i + 1) + ' · ' + esc(f.nombre) + ' · ' + f.w + '×' + f.h + '"><span class="marco" style="width:' + Math.max(4, Math.round(f.w*k)) + 'px;height:' + Math.max(4, Math.round(f.h*k)) + 'px"></span>' + esc(id) + '</button>'; }).join('') + '<button class="q" aria-label="Formato siguiente">R</button>';
+}
+function nombre(){
+  var pal = ESTADO.nombre ? [ESTADO.nombre] : (corto(ARBOL.data.modulo) === ARBOL.data.modulo ? [ARBOL.data.modulo] : ARBOL.data.modulo.replace(/^MC-/, '').split('-'));
+  $('nombre').innerHTML = esc(pal[0]) + (pal.length > 1 ? '<span>' + esc(pal.slice(1).join(' ')) + '</span>' : '');
+  $('agua').textContent = pal.join(' ');
+}
+function marcasTiempo(){
+  var palabras = ARBOL.children.filter(function(x){ return x.data.modulo === 'MC-GLOBO-TEXTO' || x.data.modulo === 'MC-TEXTO'; })
+    .reduce(function(s, n){ return Math.max(s, String(n.data.campos.texto || '').split(/\s+/).filter(Boolean).length); }, 0);
+  $('marcasT').innerHTML = Array.from({length:palabras}, function(_, i){ return '<i style="left:' + ((i + 1) / palabras*100) + '%"></i>'; }).join('');
+}
+function tiempo(t){
+  ESTADO.t = t; $('lleno').style.transform = 'scaleX(' + t + ')'; $('cabeza').style.left = (t*100) + '%'; $('tLabel').textContent = 't ' + t.toFixed(2);
+  pintarPila(t);
+}
+function modo(expl){ ESTADO.explotada = expl; $('mesa').classList.toggle('explotada', expl); $('lExpl').textContent = expl ? 'Plano' : 'Capas en Z'; posicionarPila(); }
+// render: la pieza cambió de forma (capas nuevas, formato) · refrescar: sólo cambiaron campos o cajas
+function render(nuevo){
+  if(ESTADO.capa && !capaPorNid(ESTADO.capa)) ESTADO.capa = null;
+  montarPila(); nombre(); menuCapas(); formatos(); marcasTiempo(); tiempo(ESTADO.t);
+  KAREN = karen(ARBOL); pintarKaren(); marcarSeleccion();
+  if(nuevo) cortar();
+  autoguardar();
+}
+var REF_T = null;
+function refrescar(sinFicha){
+  actualizarMarcas(); pintarPila(ESTADO.t); KAREN = karen(ARBOL); pintarKaren(); menuCapas(); nombre(); marcasTiempo();
+  if(!sinFicha){ var el = document.activeElement; if(!el || !$('ficha').contains(el)) ficha(); }
+  clearTimeout(REF_T); REF_T = setTimeout(autoguardar, 400);
+}
+function abrirPlantilla(recetaId, datosId, formatoId){
+  var r = porId('recetas_composer', recetaId); if(!r) return;
+  var f = formatoId && r.formatos.indexOf(formatoId) >= 0 ? formatoId : r.formatos[0];
+  ARBOL = construirArbol(recetaId, datosId, f); ESTADO.editado = false; ESTADO.capa = null; ESTADO.nombre = '';
+  render(true);
+}
+function irFormato(id){
+  if(id === ARBOL.data.formato.id) return; var f = porId('formatos', id); if(!f) return;
+  if(!ESTADO.editado){ ARBOL = construirArbol(ARBOL.data.receta, ARBOL.data.datos, id); ESTADO.capa = null; }
+  else { ARBOL.data.formato = {id:f.id, w:f.w, h:f.h}; ARBOL.data.orientacion = orientacion(f); }
+  render(true);
+}
+
+// ── 6 · INVENTARIO DEL DAM (composer_estantes) ──────────────────────────────
+function cumple(item, regla){
+  if(!regla) return false;
+  if(regla.resto) return true;
+  var ruta = ('/' + (item.ruta || item.carpeta || '')).toLowerCase();
+  if(regla.tipo && regla.tipo.indexOf(item.tipo) >= 0) return true;
+  if(regla.etapa && regla.etapa.indexOf(item.etapa) >= 0) return true;
+  if(regla.etapa_y_segmento && item.etapa === regla.etapa_y_segmento[0] && regla.etapa_y_segmento[1].indexOf(item.segmento) >= 0) return true;
+  if(regla.carpeta && regla.carpeta.some(function(c){ return ruta.indexOf(c) >= 0; })) return true;
+  return false;
+}
+// se evalúan en el ORDEN DE LAS FILAS de composer_estantes y gana la primera (la misma ley que dice su #DOC)
+function estanteDe(item){ var e = filas('composer_estantes').filter(function(x){ return !x.regla.plantillas && cumple(item, x.regla); })[0]; return e ? e.id : 'por_clasificar'; }
+function estantes(){ return filas('composer_estantes').slice().sort(function(a, b){ return a.orden - b.orden; }); }
+function plantillas(){ var out = [];
+  recetas().forEach(function(r){ filas(r.datos).forEach(function(d){ out.push({receta:r.id, datos:d.id, nombre:d.compania || d.id, d:d}); }); }); return out; }
+function cuenta(id){ return id === 'plantillas' ? plantillas().length : CAT.filter(function(x){ return x.estante === id; }).length; }
+function pintarEstantes(){
+  $('estantes').innerHTML = estantes().map(function(e){ var n = cuenta(e.id);
+    return '<button class="est' + (e.id === ESTADO.estante ? ' on' : '') + (n ? '' : ' sin') + '" role="tab" data-e="' + e.id + '" title="' + esc(e.que) + '">' + esc(CLARO_EST[e.id] || e.nombre) + '<i>' + n + '</i></button>'; }).join('');
+  $('invCuenta').textContent = CAT.length + ' activos';
+}
+function miniDe(x){
+  var ve = x.en_copia && x.medio === 'img';
+  return '<div class="mini' + (ve ? '' : ' falta') + '">' + (ve ? '<img loading="lazy" alt="" src="' + esc(src(x.mini || x.ruta)) + '">' : esc(!x.ruta ? 'aún no se baja' : x.en_copia === false ? 'no está en esta copia' : x.medio)) + '</div>';
+}
+function pintarRejas(){
+  var q = ESTADO.busca.trim().toLowerCase(), html = '';
+  if(!q && ESTADO.estante === 'plantillas'){
+    html = plantillas().map(function(p, i){ var d = p.d;
+      return '<button class="tile plant" data-pl="' + i + '"><div class="mini" style="background:' + esc(d.color_fondo || '#222') + '"><canvas data-prev="' + i + '"></canvas>' +
+        '</div><b>' + esc(p.nombre) + '</b><em>' + esc(p.receta.replace('RC-', '')) + '</em></button>'; }).join('');
+  } else {
+    var lista = CAT.filter(function(x){ return q ? (x.nombre + ' ' + (x.descripcion || '') + ' ' + x.id + ' ' + (x.ruta || '')).toLowerCase().indexOf(q) >= 0 : x.estante === ESTADO.estante; });
+    if(!q && ESTADO.estante === 'props') lista = lista.slice().sort(function(a, b){ return (b.mockup ? 1 : 0) - (a.mockup ? 1 : 0); });
+    html = (ESTADO.estante === 'props' && !q ? '<button class="tile mock" data-mock="1"><div class="mini">▭ ▯ 🖵<br>Mockup</div><b>Montar en laptop, celular o PC</b></button>' : '') +
+      '<button class="tile traer" data-traer="1"><div class="mini">+</div><b>Traer de tu compu</b></button>' +
+      lista.slice(0, 400).map(function(x){ return '<button class="tile" draggable="' + (porque(x) ? 'false' : 'true') + '" data-id="' + esc(x.id) + '">' + miniDe(x) + '<b>' + esc(x.nombre) + '</b>' + (q ? '<em>' + esc(x.estante) + '</em>' : '') + '</button>'; }).join('') +
+      (lista.length ? '' : '<div class="nada">' + (q ? 'Nada en el DAM con «' + esc(q) + '».' : 'Este estante está vacío en esta copia: ' + esc((porId('composer_estantes', ESTADO.estante) || {}).que || '') + '.') + '</div>');
+  }
+  $('rejas').innerHTML = (!q && ESTADO.estante === 'plantillas' ? '<div class="guia-inv" style="grid-column:1/-1">① Toca una plantilla para empezar. Luego cambia los textos tocándolos en la pieza.</div>' : '') + html;
+  if(!q && ESTADO.estante === 'plantillas') previas();
+}
+// orden E9 · cada plantilla se ve como queda (se pinta en chico con su receta), no como cuatro rayas de color
+var PREV_T = [];
+function previas(){ PREV_T.forEach(clearTimeout); PREV_T = [0, 400, 1200, 2600].map(function(ms){ return setTimeout(function(){
+  [].forEach.call(document.querySelectorAll('#rejas canvas[data-prev]'), function(cv){ var p = plantillas()[+cv.dataset.prev]; if(!p) return;
+    try { var r = porId('recetas_composer', p.receta), fid = r.formatos.indexOf(ARBOL && ARBOL.data.formato.id) >= 0 ? ARBOL.data.formato.id : r.formatos[0], f = porId('formatos', fid), k = 240 / Math.max(f.w, f.h);
+      var a = construirArbol(p.receta, p.datos, fid); cv.width = Math.round(f.w * k); cv.height = Math.round(f.h * k);
+      var ctx = cv.getContext('2d'); ctx.save(); ctx.scale(k, k); var M = METRICAS; pintar(ctx, a, f.w, f.h, 1); METRICAS = M; ctx.restore(); } catch(e) {} }); }, ms); }); }
+var CLARO_EST = {plantillas:'Plantillas', originales:'Fotos originales', limpias:'Fotos limpias', editadas:'Retocadas', design:'Diseños', corp:'Corporativo', publicidad:'Publicidad', props:'El León y props', por_clasificar:'Otros'};
+// los tres pasos: dónde vas y a qué te lleva cada uno
+var PASO = 1, PASO_HECHO = {};
+window.pasosE9 = function(n, h){ pasos(n, h); };
+function pasos(n, hecho){ if(hecho) PASO_HECHO[hecho] = true; if(n) PASO = n; [].forEach.call(document.querySelectorAll('#pasos button'), function(b){ var k = +b.dataset.paso; b.classList.toggle('on', k === PASO); b.classList.toggle('hecho', !!PASO_HECHO[k] && k !== PASO); }); }
+function irPaso(k){ if(k === 1){ irModo('plantillas'); abrirHoja('zInventario'); pasos(1); }
+  else if(k === 2){ irModo('imagenes'); abrirHoja('zInventario'); pasos(2, 1); aviso('② Toca una imagen y luego <b>Poner en la pieza</b> (o arrástrala a la pieza). Textos y Props están en los botones de abajo.', true); }
+  else { pasos(3, 2); $('bPng').click(); } }
+// ── E19 · LA COLUMNA: los botones Plantillas · Textos · Props · Imágenes cambian lo que hay debajo de las capas ──
+var TITULO_MODO = {plantillas:'PLANTILLAS · <b>empieza aquí</b>', textos:'TEXTOS · <b>tipografías</b>', props:'PROPS · <b>el León, capas y mockups</b>', imagenes:'IMÁGENES · <b>DAM</b>'};
+function irModo(m){
+  ESTADO.modo = m; var inv = $('zInventario'); inv.dataset.modo = m; ESTADO.busca = ''; $('busca').value = '';
+  [].forEach.call(document.querySelectorAll('#modos button'), function(b){ b.classList.toggle('on', b.dataset.modo === m); });
+  $('invTitulo').innerHTML = TITULO_MODO[m] || TITULO_MODO.imagenes;
+  if(m === 'plantillas' || m === 'props') ESTADO.estante = m;
+  else if(m === 'imagenes' && (!ESTADO.estante || ESTADO.estante === 'plantillas' || ESTADO.estante === 'props')){
+    var mejor = estantes().filter(function(e){ return e.id !== 'plantillas' && e.id !== 'props'; }).sort(function(a, b){ return cuenta(b.id) - cuenta(a.id); })[0]; ESTADO.estante = mejor ? mejor.id : 'por_clasificar'; }
+  if(m === 'textos') pintarTextos(); else { pintarEstantes(); pintarRejas(); }
+}
+var ESTILOS = [
+  {id:'titular', nombre:'Titular', campos:{texto:'Tu titular aquí', tam:0.1, peso:'900', fuente:'disp', alinear:'center', color:'#ece7dc'}, caja:[0.08, 0.08, 0.84, 0.2]},
+  {id:'subtitulo', nombre:'Subtítulo', campos:{texto:'Lo que te facilita la vida', tam:0.06, peso:'800', fuente:'disp', alinear:'center', color:'#d4b24c'}, caja:[0.1, 0.3, 0.8, 0.13]},
+  {id:'cuerpo', nombre:'Párrafo', campos:{texto:'Escribe aquí lo que quieres contar, en palabras simples.', tam:0.036, peso:'500', fuente:'sys', alinear:'left', color:'#ece7dc'}, caja:[0.1, 0.5, 0.8, 0.2]},
+  {id:'etiqueta', nombre:'Etiqueta', campos:{texto:'TU MARCA', tam:0.03, peso:'800', fuente:'sys', alinear:'center', color:'#d4b24c'}, caja:[0.3, 0.86, 0.4, 0.07]}
+];
+function textoSel(){ var n = ESTADO.capa && capaPorNid(ESTADO.capa); return n && n.data.modulo === 'MC-TEXTO' ? n : null; }
+function pintarTextos(){
+  var sel = textoSel(), actual = sel ? sel.data.campos.fuente : (ESTADO.fuenteTexto || 'disp');
+  var fam = [['disp', 'Display (Bahnschrift)', 'de la casa'], ['sys', 'Sistema', 'de la casa']].concat(Object.keys(FUENTES).map(function(f){ return [f, f, 'subida · esta compu']; }));
+  $('textos').innerHTML = '<h4>AGREGAR UN TEXTO · O ARRÁSTRALO A LA PIEZA</h4><div class="estilos">' + ESTILOS.map(function(e){ var c = e.campos;
+      return '<button class="estilo" draggable="true" data-estilo="' + e.id + '"><span>' + esc(e.nombre).toUpperCase() + '</span><b style="font:' + c.peso + ' ' + (e.id === 'titular' ? 22 : e.id === 'subtitulo' ? 17 : 13) + 'px ' + esc(familiaCss(c.fuente)) + ';color:' + c.color + '">' + esc(c.texto) + '</b></button>'; }).join('') + '</div>' +
+    '<h4>TIPOGRAFÍA ' + (sel ? 'DEL TEXTO ELEGIDO' : 'DE LOS TEXTOS NUEVOS') + '</h4><div class="fuentes">' + fam.map(function(f){
+      return '<button class="fuente-b' + (f[0] === actual ? ' on' : '') + '" data-fuente="' + esc(f[0]) + '"><i style="font-family:' + esc(familiaCss(f[0])) + '">Aa</i><b style="font-family:' + esc(familiaCss(f[0])) + '">' + esc(f[1]) + '</b><small>' + esc(f[2]) + '</small></button>'; }).join('') +
+    '<button class="fuente-b subir" id="bSubirFuente">+ Subir tipografía (woff2 · ttf · otf)</button></div>' +
+    '<p class="nota">La tipografía se queda en esta compu: no se sube a ningún lado. Si guardas el diseño <b>portátil</b>, viaja dentro del archivo.</p>';
+}
+function cargarFuente(familia, url){
+  if(typeof FontFace === 'undefined') return Promise.reject(new Error('este navegador no carga tipografías'));
+  var ff = new FontFace(familia, 'url(' + url + ')');
+  return ff.load().then(function(f){ document.fonts.add(f); FUENTES[familia] = url; return familia; });
+}
+function guardarFuentes(){ try { localStorage.setItem(LLAVE_F, JSON.stringify(FUENTES)); } catch(e) { aviso('La tipografía sirve en esta pestaña; el navegador no tuvo lugar para recordarla.'); } }
+function subirFuente(file){
+  if(!file || !/\.(woff2?|ttf|otf)$/i.test(file.name)){ aviso('<b>NO</b> · eso no es una tipografía (woff2, woff, ttf u otf).'); return; }
+  if(file.size > 3e6){ aviso('<b>NO</b> · la tipografía pesa más de 3 MB.'); return; }
+  var familia = file.name.replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9 _-]+/g, ' ').trim().slice(0, 40) || 'Mi tipografia';
+  var fr = new FileReader(); fr.onload = function(){ cargarFuente(familia, fr.result).then(function(){ guardarFuentes(); usarFuente(familia); aviso('Tipografía lista: <b>' + esc(familia) + '</b>', true); })
+    .catch(function(){ aviso('<b>NO</b> · el navegador no pudo leer «' + esc(file.name) + '» como tipografía.'); }); };
+  fr.readAsDataURL(file);
+}
+function usarFuente(f){ var sel = textoSel(); ESTADO.fuenteTexto = f;
+  if(sel){ sel.data.campos.fuente = f; ESTADO.editado = true; refrescar(); }
+  if(ESTADO.modo === 'textos') pintarTextos(); }
+function fuentesDe(a){ var usadas = {}; a.children.forEach(function(n){ var f = n.data.campos && n.data.campos.fuente; if(f && f !== 'disp' && f !== 'sys') usadas[f] = 1; }); return Object.keys(usadas); }
+// profundidad Z: la capa elegida se mueve en la pila (1 = justo encima del fondo); las z se vuelven a contar de 10 en 10
+function zCapas(){ return ARBOL.children.filter(function(n){ return n.role !== 'fondo'; }).sort(function(a, b){ return a.data.z - b.data.z; }); }
+function pintarZ(){
+  var sel = ESTADO.capa && capaPorNid(ESTADO.capa), orden = zCapas(), i = sel ? orden.indexOf(sel) : -1, inp = $('zProf');
+  inp.max = Math.max(1, orden.length); inp.disabled = i < 0; inp.value = i < 0 ? 1 : i + 1;
+  $('zProfL').classList.toggle('no', i < 0); $('zProfV').textContent = i < 0 ? '—' : (i + 1) + '/' + orden.length;
+}
+function ponerZ(v){
+  var sel = ESTADO.capa && capaPorNid(ESTADO.capa); if(!sel || sel.role === 'fondo') return;
+  var orden = zCapas().filter(function(n){ return n !== sel; }); orden.splice(clamp(v - 1, 0, orden.length), 0, sel);
+  orden.forEach(function(n, i){ n.data.z = (i + 1)*10; }); ESTADO.editado = true; render(false);
+}
+// mockup: dispositivo + una imagen → capa MC-MOCKUP o prop nuevo (PNG con alfa)
+function imagenesParaMockup(){ return CAT.filter(function(x){ return !porque(x) && x.estante !== 'plantillas'; }); }
+function ventanaMockup(o){
+  o = o || {}; var sel = ESTADO.capa && capaPorNid(ESTADO.capa), base = sel && (sel.data.modulo === 'MC-IMAGEN') ? {ruta:sel.data.campos.ruta, nombre:sel.data.campos.nombre} : null;
+  var lista = imagenesParaMockup(), pri = lista.filter(function(x){ return x.estante === 'publicidad' || x.estante === 'design'; })[0] || lista[0] || {};
+  var f = {dispositivo:o.dispositivo || 'laptop', ruta:o.ruta || (base && base.ruta) || pri.ruta || '', nombre:o.nombre || (base && base.nombre) || pri.nombre || '', giro:o.giro != null ? o.giro : -18, inclina:o.inclina != null ? o.inclina : 6, color:'#1b212c'};
+  var v = $('ventana'); v.className = 'ventana';
+  v.innerHTML = '<div class="mock-v"><div class="ver"><canvas id="mVer"></canvas></div><div><div class="cab"><span>PROP · MOCKUP</span></div><h3>Montar en un dispositivo</h3>' +
+    '<p>Elige el dispositivo y la imagen que va en su pantalla; gíralo hasta que se vea bien. Ponlo en la pieza o guárdalo como <b>prop nuevo</b> (PNG con fondo transparente).</p>' +
+    '<div class="disp" id="mDisp">' + Object.keys(DISPOSITIVOS).map(function(k){ return '<button data-d="' + k + '"' + (k === f.dispositivo ? ' class="on"' : '') + '>' + DISPOSITIVOS[k].nombre + '</button>'; }).join('') + '</div>' +
+    '<label>GIRO · <span id="mGiroV">' + f.giro + '°</span><input type="range" id="mGiro" min="-35" max="35" step="1" value="' + f.giro + '"></label>' +
+    '<label>INCLINACIÓN · <span id="mIncV">' + f.inclina + '°</span><input type="range" id="mInc" min="-35" max="35" step="1" value="' + f.inclina + '"></label>' +
+    '<label>LA IMAGEN DE LA PANTALLA</label><div class="fotos" id="mFotos"><button class="traer" data-traer="1" title="De tu compu">+</button>' +
+    lista.slice(0, 160).map(function(x, i){ return '<button data-i="' + i + '" title="' + esc(x.nombre) + '"' + (x.ruta === f.ruta ? ' class="on"' : '') + ' style="background-image:url(&quot;' + esc(src(x.mini || x.ruta)) + '&quot;)"></button>'; }).join('') + '</div></div></div>' +
+    '<footer><button class="btn" id="mCerrar"><kbd>Esc</kbd>Cerrar</button><button class="btn sec" id="mProp"><kbd>⇣</kbd>Guardar como prop</button><button class="btn prim" id="mPoner"><kbd>↵</kbd>Poner en la pieza</button></footer>';
+  $('velo').classList.add('on');
+  function ver(){ var cv = mockupPNG(f, 640), m = $('mVer'); if(!m) return; m.width = cv.width; m.height = cv.height; m.getContext('2d').drawImage(cv, 0, 0); }
+  var im = imagen(f.ruta); if(im && !im.complete) im.addEventListener('load', ver); ver();
+  $('mDisp').onclick = function(e){ var b = e.target.closest('[data-d]'); if(!b) return; f.dispositivo = b.dataset.d; [].forEach.call(this.children, function(x){ x.classList.toggle('on', x === b); }); ver(); };
+  $('mGiro').oninput = function(){ f.giro = +this.value; $('mGiroV').textContent = f.giro + '°'; ver(); };
+  $('mInc').oninput = function(){ f.inclina = +this.value; $('mIncV').textContent = f.inclina + '°'; ver(); };
+  $('mFotos').onclick = function(e){ var b = e.target.closest('button'); if(!b) return;
+    if(b.dataset.traer){ var inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.onchange = function(){ var fl = inp.files[0]; if(!fl) return; var fr = new FileReader();
+      fr.onload = function(){ f.ruta = fr.result; f.nombre = fl.name.replace(/\.[^.]+$/, ''); var i2 = imagen(f.ruta); i2.addEventListener('load', ver); ver(); }; fr.readAsDataURL(fl); }; inp.click(); return; }
+    var x = lista[+b.dataset.i]; f.ruta = x.ruta; f.nombre = x.nombre; [].forEach.call(this.children, function(y){ y.classList.toggle('on', y === b); });
+    var i3 = imagen(f.ruta); if(!i3.complete) i3.addEventListener('load', ver); ver(); };
+  $('mCerrar').onclick = cerrar;
+  $('mPoner').onclick = function(e){ onda(this, e); var a = mockupPNG(f, 200), k = cajaPara(a.width, a.height, 0.7);
+    var n = nuevaCapa('MC-MOCKUP', {dispositivo:f.dispositivo, ruta:f.ruta, nombre:f.nombre, giro:f.giro, inclina:f.inclina, color:f.color}, k); if(!n) return;
+    ESTADO.capa = n.nid; ESTADO.editado = true; cerrar(); render(false); cerrarHojas(); aviso('Mockup en la pieza: arrástralo, escálalo con el rombo o gíralo en la ficha.', true); };
+  $('mProp').onclick = function(e){ onda(this, e); guardarMockupProp(f); };
+  return f;
+}
+function guardarMockupProp(f){
+  var cv = mockupPNG(f, 1400), url;
+  try { url = cv.toDataURL('image/png'); } catch(e) { aviso('<b>NO</b> · el navegador no deja leer esa imagen (ábrelo desde la casa encendida o el sitio).'); return null; }
+  var nombre = 'Mockup ' + (DISPOSITIVOS[f.dispositivo] || {}).nombre + ' · ' + (f.nombre || 'imagen'), id = 'MOCKUP:' + limpio(f.dispositivo + '_' + (f.nombre || '')) + '_' + Date.now().toString(36);
+  var x = {id:id, ruta:url, nombre:nombre.slice(0, 80), descripcion:'prop hecho en el Composer (' + f.dispositivo + ', giro ' + f.giro + '°, inclinación ' + f.inclina + '°)', tipo:'PR', segmento:'props', medio:'img', en_copia:true, w:cv.width, h:cv.height, mockup:true};
+  x.estante = 'props'; CAT.unshift(x);
+  try { var g = JSON.parse(localStorage.getItem(LLAVE_P) || '[]'); g.unshift({id:x.id, ruta:url, nombre:x.nombre, descripcion:x.descripcion, w:x.w, h:x.h}); localStorage.setItem(LLAVE_P, JSON.stringify(g.slice(0, 12))); } catch(e) {}
+  bajar('LS_PR_MOCKUP_' + f.dispositivo.toUpperCase() + '_' + (limpio(f.nombre).toUpperCase() || 'IMAGEN') + '.png', url);
+  pintarEstantes(); if(ESTADO.modo === 'props') pintarRejas();
+  aviso('Prop nuevo en <b>Props</b> (en esta compu). Para que sirva en todo lado, guarda el PNG que bajó junto a tus imágenes.', true);
+  return x;
+}
+function porque(x){
+  if(!x.ruta) return 'Aún no se baja: sólo existe en ' + (x.magnific_id ? 'Magnific (' + x.magnific_id + ')' : 'su fuente') + '.';
+  if(x.en_copia === false) return 'La ficha existe pero el archivo no está en esta copia de la casa.';
+  if(x.medio !== 'img') return 'El Composer pinta imágenes; ' + (x.medio === 'video' ? 'un video' : 'un documento') + ' sólo se consulta aquí.';
+  return '';
+}
+function ventanaActivo(x){
+  var no = porque(x), v = $('ventana'); v.className = 'ventana';
+  v.innerHTML = '<div class="activo"><div class="ver">' + (no ? '<p style="padding:20px;text-align:center">' + esc(no) + '</p>' : '<img alt="' + esc(x.nombre) + '" src="' + esc(src(x.ruta)) + '">') + '</div>' +
+    '<div><div class="cab"><span>' + esc((porId('composer_estantes', x.estante) || {}).nombre || x.estante).toUpperCase() + ' · ' + esc(x.estado || '') + '</span></div><h3>' + esc(x.nombre) + '</h3>' +
+    '<p>' + esc(x.descripcion || '') + '</p>' +
+    '<dl><dt>ID</dt><dd>' + esc(x.id) + '</dd><dt>RUTA</dt><dd>' + esc(x.ruta || '— (' + (x.carpeta || '') + ')') + '</dd>' +
+    '<dt>ETAPA</dt><dd>' + esc(x.etapa || '—') + '</dd><dt>TIPO</dt><dd>' + esc(x.tipo || '—') + ' · ' + esc(x.segmento || '—') + '</dd>' +
+    (x.w ? '<dt>TAMAÑO</dt><dd>' + x.w + '×' + x.h + ' px</dd>' : '') + '<dt>FUENTE</dt><dd>' + esc(x.fuente || '—') + '</dd>' +
+    (x.magnific_id ? '<dt>MAGNIFIC</dt><dd>' + esc(x.magnific_id) + '</dd>' : '') + (x.sin_ficha ? '<dt>FICHA</dt><dd>sin ficha en os_semilla.dam (está en disco)</dd>' : '') + '</dl>' +
+    (no ? '<div class="porque">' + esc(no) + '</div>' : '') + '</div></div>' +
+    '<footer><button class="btn" id="vCerrar"><kbd>Esc</kbd>Cerrar</button><button class="btn" id="vRuta"><kbd>C</kbd>Copiar ruta</button>' +
+    (no ? '' : '<button class="btn sec" id="vMock"><kbd>▭</kbd>Montar en laptop</button>') +
+    '<button class="btn prim" id="vPoner"' + (no ? ' aria-disabled="true"' : '') + '><kbd>↵</kbd>' + (ESTADO.cambiar ? 'Cambiar la imagen de la capa' : 'Poner en la pieza') + '</button></footer>';
+  $('velo').classList.add('on');
+  $('vCerrar').onclick = cerrar;
+  $('vRuta').onclick = function(){ try { navigator.clipboard.writeText(x.ruta || ''); aviso('Ruta copiada: ' + esc(x.ruta), true); } catch(e) { aviso(esc(x.ruta)); } };
+  $('vPoner').onclick = function(e){ if(no){ aviso('<b>NO</b> · ' + esc(no)); return; } onda(this, e); ponerActivo(x.id); cerrar(); };
+  if($('vMock')) $('vMock').onclick = function(){ ventanaMockup({ruta:x.ruta, nombre:x.nombre, dispositivo:'laptop'}); };
+}
+function cajaPara(w, h, k){
+  var f = ARBOL.data.formato, a = (w && h) ? w / h : 1, bw = k || 0.5, bh = bw * f.w / (a * f.h);
+  if(bh > 0.8){ bh = 0.8; bw = bh * a * f.h / f.w; }
+  return [r3((1 - bw)/2), r3((1 - bh)/2), r3(bw), r3(bh)];
+}
+function ponerActivo(id, rutaLocal, nombreLocal, wl, hl, en){
+  var x = id ? CAT.filter(function(i){ return i.id === id; })[0] : {ruta:rutaLocal, nombre:nombreLocal, w:wl, h:hl};
+  if(!x) return null;
+  var sel = ESTADO.capa && capaPorNid(ESTADO.capa);
+  if(ESTADO.cambiar && sel && (sel.data.modulo === 'MC-IMAGEN' || sel.data.modulo === 'MC-MASCOTA' || sel.data.modulo === 'MC-MOCKUP')){
+    sel.data.campos.ruta = x.ruta; if(sel.data.modulo !== 'MC-MASCOTA') sel.data.campos.nombre = x.nombre; ESTADO.cambiar = false; ESTADO.editado = true; render(false); return sel; }
+  ESTADO.cambiar = false;
+  var n = nuevaCapa('MC-IMAGEN', {ruta:x.ruta, nombre:x.nombre}, enPunto(cajaPara(x.w, x.h, x.tipo === 'PR' ? 0.42 : 0.6), en));
+  if(!n) return null;
+  ESTADO.capa = n.nid; ESTADO.editado = true; imagen(x.ruta); render(false); cerrarHojas(); if(window.pasosE9) window.pasosE9(3, 2);
+  aviso('Puesta en la pieza: <b>' + esc(x.nombre) + '</b> · arrástrala o escálala con el rombo.', true);
+  return n;
+}
+function traerImagen(file){
+  if(!file || !/^image\//.test(file.type)){ aviso('<b>NO</b> · eso no es una imagen.'); return; }
+  if(file.size > 6e6){ aviso('<b>NO</b> · la imagen pesa más de 6 MB: viajaría dentro del diseño. Redúcela antes.'); return; }
+  var fr = new FileReader(); fr.onload = function(){ var url = fr.result, im = new Image();
+    im.onload = function(){ IMG[url] = im; ponerActivo(null, url, file.name.replace(/\.[^.]+$/, ''), im.naturalWidth, im.naturalHeight); }; im.src = url; };
+  fr.readAsDataURL(file);
+}
+// E19 · soltar en la pieza: la caja se centra donde cayó (sin salirse)
+function enPunto(c, en){ if(!en) return c; return [r3(clamp(en[0] - c[2]/2, 0, 1 - c[2])), r3(clamp(en[1] - c[3]/2, 0, 1 - c[3])), c[2], c[3]]; }
+function agregarTexto(estilo, en){
+  var e = ESTILOS.filter(function(x){ return x.id === estilo; })[0], campos = e ? clonar(e.campos) : {texto:'Escribe aquí', color:'#ece7dc', tam:0.07, alinear:'center', peso:'900', fuente:ESTADO.fuenteTexto || 'disp'};
+  if(e && ESTADO.fuenteTexto && FUENTES[ESTADO.fuenteTexto]) campos.fuente = ESTADO.fuenteTexto;
+  var n = nuevaCapa('MC-TEXTO', campos, enPunto(e ? e.caja.slice() : [0.1, 0.42, 0.8, 0.16], en));
+  if(!n) return; ESTADO.capa = n.nid; ESTADO.editado = true; render(false); abrirHoja('ficha');
+  setTimeout(function(){ var t = $('ficha').querySelector('textarea[data-k=texto]'); if(t){ t.focus(); t.select(); } }, 30);
+}
+
+// ── 7 · GUARDAR / ABRIR el diseño como JSON local ───────────────────────────
+var TIPO = 'lyon_spark.composer.diseno';
+function diseno(portatil){
+  var a = clonar(ARBOL), faltan = 0;
+  if(portatil) a.children.forEach(function(n){ var r = n.data.campos && n.data.campos.ruta; if(!r || /^data:/.test(r)) return;
+    var im = IMG[r]; if(!im || !im.naturalWidth){ faltan++; return; }
+    try { var cv = document.createElement('canvas'); cv.width = im.naturalWidth; cv.height = im.naturalHeight; cv.getContext('2d').drawImage(im, 0, 0);
+      n.data.campos.ruta_casa = r; n.data.campos.ruta = cv.toDataURL('image/png'); } catch(e) { faltan++; } });
+  var usadas = fuentesDe(a); if(usadas.length) a.data.fuentes = usadas.map(function(f){ return {familia:f, data:portatil && FUENTES[f] ? FUENTES[f] : ''}; }); else delete a.data.fuentes;
+  return {json:{tipo:TIPO, version:1, nombre:ESTADO.nombre || a.data.titulo || '', guardado:new Date().toISOString(), portatil:!!portatil,
+    editado:ESTADO.editado, receta:a.data.receta, datos:a.data.datos, formato:a.data.formato.id, huella:HUELLA, arbol:a}, faltan:faltan};
+}
+function validar(j){
+  var a = j && j.tipo === TIPO ? j.arbol : j;
+  if(!a || a.tag !== 'pieza' || !a.data || !Array.isArray(a.children)) return {error:'no es un diseño del Composer (falta el árbol «pieza»)'};
+  if(j.tipo === TIPO && j.version > 1) return {error:'lo guardó un Composer más nuevo (versión ' + j.version + ')'};
+  if(!a.data.formato || !porId('formatos', a.data.formato.id)) return {error:'el formato «' + (a.data.formato && a.data.formato.id) + '» no está en la semilla'};
+  var sin = a.children.filter(function(n){ return !n.data || !porId('modulos_codigo', n.data.modulo); }).map(function(n){ return n.data && n.data.modulo; });
+  if(sin.length) return {error:'trae módulos que el registro no conoce: ' + sin.join(', ')};
+  if(a.children.some(function(n){ return !Array.isArray(n.data.caja) || n.data.caja.length !== 4; })) return {error:'hay capas sin caja de 4 fracciones'};
+  if(!porId('recetas_composer', a.data.receta)) a.data.receta = (recetas()[0] || {}).id;
+  a.data.f2 = a.data.f2 || {necesidad:'', distanciamiento:''}; a.data.version = a.data.version || {};
+  return {arbol:a, nombre:j.nombre || '', editado:j.tipo === TIPO ? j.editado !== false : true};
+}
+function abrirDiseno(texto, origen){
+  var j; try { j = JSON.parse(texto); } catch(e) { aviso('<b>NO SE ABRE</b> · el archivo no es JSON.'); return false; }
+  var v = validar(j); if(v.error){ aviso('<b>NO SE ABRE</b> · ' + esc(v.error) + '.'); return false; }
+  ARBOL = v.arbol; NID = sigNid(ARBOL); ESTADO.nombre = v.nombre; ESTADO.editado = v.editado; ESTADO.capa = null;
+  var faltaF = [];
+  (ARBOL.data.fuentes || []).forEach(function(f){ if(FUENTES[f.familia]) return;
+    if(f.data) cargarFuente(f.familia, f.data).then(function(){ guardarFuentes(); refrescar(true); }).catch(function(){}); else faltaF.push(f.familia); });
+  render(true);
+  if(faltaF.length) setTimeout(function(){ aviso('Este diseño usa la tipografía <b>' + esc(faltaF.join(', ')) + '</b>, que no está en esta compu: se ve con la del sistema. Súbela en <b>Textos</b>.'); }, 3300);
+  var k = KAREN.filter(function(r){ return !r.ok; }).length;
+  aviso('Abierto' + (origen ? ' (' + esc(origen) + ')' : '') + ': <b>' + esc(ESTADO.nombre || ARBOL.data.titulo || '') + '</b> · Karen: ' + (k ? k + ' regla(s) frenan' : 'puede salir'), !k);
+  return true;
+}
+function autoguardar(){ try { localStorage.setItem(LLAVE, JSON.stringify(diseno(false).json)); } catch(e) {} }
+function ultimo(){ try { var t = localStorage.getItem(LLAVE); return t ? JSON.parse(t) : null; } catch(e) { return null; } }
+function ventanaGuardar(){
+  var v = $('ventana'), u = ultimo(); v.className = 'ventana chica guardar';
+  v.innerHTML = '<h3>Guardar el diseño</h3><p>Se baja un archivo <b>.json</b> a esta compu. Ábrelo después en cualquier compu con <b>Abrir</b> (O). ' +
+    'El <b>liviano</b> guarda las imágenes del DAM por su ruta (sirve en cualquier copia de la casa); el <b>portátil</b> las lleva dentro (sirve aunque la otra compu no tenga el DAM).</p>' +
+    '<input type="text" id="gNombre" value="' + esc(ESTADO.nombre || ARBOL.data.titulo || '') + '" placeholder="Nombre del diseño" aria-label="Nombre del diseño">' +
+    (u ? '<p>Este navegador guardó solo, por si acaso: <b>' + esc(u.nombre || 'sin nombre') + '</b> · ' + esc(String(u.guardado || '').replace('T', ' ').slice(0, 16)) + '</p>' : '') +
+    '<footer><button class="btn" id="gCerrar"><kbd>Esc</kbd>Cerrar</button>' + (u ? '<button class="btn" id="gUltimo"><kbd>↺</kbd>Recuperar ése</button>' : '') +
+    '<button class="btn sec" id="gPortatil"><kbd>⇣</kbd>Portátil</button><button class="btn sec" id="gCasa" title="Lo deja en la casa (piezas/): el codec lo puede volver a pintar sin abrir el Composer"><kbd>⌂</kbd>En la casa</button><button class="btn prim" id="gLiviano"><kbd>↵</kbd>Guardar</button></footer>';
+  $('velo').classList.add('on'); var inp = $('gNombre'); setTimeout(function(){ inp.focus(); inp.select(); }, 30);
+  function va(port){ ESTADO.nombre = inp.value.trim(); var d = diseno(port), txt = JSON.stringify(d.json, null, 1);
+    bajar((limpio(ESTADO.nombre) || 'diseno') + (port ? '.portatil' : '') + '.composer.json', URL.createObjectURL(new Blob([txt], {type:'application/json'})));
+    autoguardar(); cerrar(); nombre(); ficha(); listo($('bGuardar'));
+    aviso('Guardado <b>' + esc(ESTADO.nombre || 'diseño') + '</b>' + (d.faltan ? ' · ' + d.faltan + ' imagen(es) se quedaron por ruta (no se pudieron leer aquí)' : ''), !d.faltan); }
+  $('gCerrar').onclick = cerrar; $('gLiviano').onclick = function(){ va(false); }; $('gPortatil').onclick = function(){ va(true); };
+  // 19 oct · «la carpeta es el dato»: el diseño (liviano) se queda en la casa como piezas/<nombre>.json; en línea llega a Eck como pedido
+  $('gCasa').onclick = function(){ ESTADO.nombre = inp.value.trim(); var d = diseno(false);
+    fetch(location.origin + '/atender', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({accion:'pieza_guardar', nombre:ESTADO.nombre || 'diseno', diseno:d.json, titulo:'Diseño del Composer · ' + (ESTADO.nombre || 'diseño')})})
+      .then(function(r){ return r.json(); }).then(function(j){ autoguardar(); cerrar(); nombre(); listo($('bGuardar'));
+        if(j && j.ok) aviso('En la casa: <b>' + esc((j.hecho && j.hecho.ruta) || j.pedido || 'guardado') + '</b>', true); else aviso('<b>NO SE GUARDÓ EN LA CASA</b> · ' + esc((j && (j.error || j.detalle)) || 'sin respuesta') + '. Usa «Guardar» (se baja a esta compu).'); })
+      .catch(function(){ aviso('<b>NO HAY CASA ENCENDIDA</b> · usa «Guardar» (se baja a esta compu).'); }); };
+  inp.onkeydown = function(e){ if(e.key === 'Enter'){ e.preventDefault(); va(false); } };
+  if(u) $('gUltimo').onclick = function(){ cerrar(); abrirDiseno(JSON.stringify(u), 'lo último de este navegador'); };
+}
+
+// ── lote · RI-RESULTADOS: el diseño en todos los formatos de su receta ─────
+function lote(){
+  var fs = formatosDe(), res = fs.map(function(id){ var a; if(!ESTADO.editado) a = construirArbol(ARBOL.data.receta, ARBOL.data.datos, id);
+    else { a = clonar(ARBOL); var f = porId('formatos', id); a.data.formato = {id:f.id, w:f.w, h:f.h}; a.data.orientacion = orientacion(f); }
+    return exportarArbol(a); });
+  if(!ESTADO.editado) NID = sigNid(ARBOL);
+  var pasan = res.filter(function(x){ return x.pasa; }).length, porLey = {};
+  res.forEach(function(x){ x.karen.filter(function(k){ return !k.ok; }).forEach(function(k){ porLey[k.ley] = (porLey[k.ley] || 0) + 1; }); });
+  var v = $('ventana'); v.className = 'ventana';
+  v.innerHTML = '<header><div class="total">' + pasan + '/' + res.length + '<small>FORMATOS PASAN A KAREN</small></div><div class="desglose">' +
+    '<div><b>' + res.length + '</b>FORMATOS</div><div><b' + (res.length - pasan ? ' style="color:var(--bad)"' : '') + '>' + (res.length - pasan) + '</b>FRENADAS</div>' +
+    Object.keys(porLey).map(function(k){ return '<div><b style="color:var(--bad)">' + porLey[k] + '</b>' + k + '</div>'; }).join('') + '</div></header>' +
+    '<div class="rejilla">' + res.map(function(x, i){ return '<div class="mini-l' + (x.pasa ? '' : ' no') + '" style="animation-delay:' + (i*40) + 'ms">' +
+      (x.png ? '<img alt="' + esc(x.arbol.data.formato.id) + '" src="' + x.png + '">' : '<p>sin vista (imágenes fuera del servidor)</p>') + '<span>' + (x.pasa ? 'PASA' : 'FRENA') + '</span><small>' + esc(x.arbol.data.formato.id) + '</small></div>'; }).join('') + '</div>' +
+    '<footer><button class="btn" id="vCerrar"><kbd>Esc</kbd>Cerrar</button><button class="btn prim" id="vBajar"' + (pasan ? '' : ' aria-disabled="true"') + '><kbd>↓</kbd>Descargar las ' + pasan + ' que pasan</button></footer>';
+  $('velo').classList.add('on');
+  $('vCerrar').onclick = cerrar;
+  $('vBajar').onclick = function(e){ if(!pasan) return; onda(this, e); var cola = res.filter(function(x){ return x.pasa && x.png; }), b = this;
+    (function sig(){ var x = cola.shift(); if(!x){ listo(b); return; } bajar(nombreDe(x.arbol) + '.png', x.png); setTimeout(sig, 300); })(); };
+}
+function cerrar(){ $('velo').classList.remove('on'); }
+
+// ── hojas (teléfono) ────────────────────────────────────────────────────────
+function abrirHoja(id){ if(!TEL.matches) return; cerrarHojas(id); var h = $(id); if(h){ h.classList.add('abierta'); }
+  [].forEach.call(document.querySelectorAll('#dique button'), function(b){ b.classList.toggle('on', b.dataset.hoja === id); }); }
+function cerrarHojas(salvo){ [].forEach.call(document.querySelectorAll('.hoja.abierta'), function(h){ if(h.id !== salvo) h.classList.remove('abierta'); });
+  if(!salvo) [].forEach.call(document.querySelectorAll('#dique button'), function(b){ b.classList.remove('on'); }); }
+
+// ── piel: la lámina composer_hud (zonas siempre; placa y nodos sólo si está lista) ──
+function piel(){
+  if(!LAM) return;
+  var D = LAM.disposicion || {}, zonaDe = function(n){ return D[n.liga] || n.zona; };   // E19: la cara fácil pone sus zonas encima de las de E5
+  (LAM.nodos || []).forEach(function(n){ var el = n.liga && document.querySelector(n.liga), z = zonaDe(n); if(!el || !z) return;
+    el.style.setProperty('--x', z.x); el.style.setProperty('--y', z.y); el.style.setProperty('--w', z.w); el.style.setProperty('--h', z.h); });
+  if(!LAM.listo) return;
+  if(LAM.disposicion && LAM.disposicion['#mesa']){ var m = LAM.disposicion['#mesa']; $('app').classList.add('con-e19'); $('app').style.setProperty('--placa-w', ((m.x + m.w/2) * 2) + '%'); }
+  $('app').classList.add('con-piel'); $('placaHud').style.backgroundImage = 'url("' + src(LAM.placa) + '")';
+  $('nodosHud').innerHTML = (LAM.nodos || []).filter(function(n){ return n.png && (D[n.liga] || {}).png !== false; }).map(function(n){ var z = zonaDe(n);
+    return '<img class="nodo-hud" alt="" src="' + esc(src(n.png)) + '" style="--x:' + z.x + ';--y:' + z.y + ';--w:' + z.w + ';--h:' + z.h + ';z-index:' + (n.z || 1) + '">'; }).join('');
+}
+
+function montar(){
+  var ini = porId('recetas_composer', CRUCE.mapa.receta) || recetas()[0];
+  if(!ini){ $('vacio').textContent = 'La semilla no trae la receta ' + CRUCE.mapa.receta + '.'; return; }
+  if(!filas('composer_estantes').length) ESTADO.estante = null;
+  ESTADO.estante = 'plantillas';
+  if(CRUCE.nodo) $('aRueda').href = '../fachada.html#' + CRUCE.nodo;
+  piel();
+  var datosIni = CRUCE.mapa.datos && porId(ini.datos, CRUCE.mapa.datos) ? CRUCE.mapa.datos : filas(ini.datos)[0].id;
+  ARBOL = construirArbol(ini.id, datosIni, ini.formatos[0]);
+  try { var fs = JSON.parse(localStorage.getItem(LLAVE_F) || '{}'); Object.keys(fs).forEach(function(f){ cargarFuente(f, fs[f]).then(function(){ refrescar(true); if(ESTADO.modo === 'textos') pintarTextos(); }).catch(function(){}); }); } catch(e) {}
+  try { JSON.parse(localStorage.getItem(LLAVE_P) || '[]').forEach(function(x){ if(!CAT.some(function(y){ return y.id === x.id; })) CAT.unshift({id:x.id, ruta:x.ruta, nombre:x.nombre, descripcion:x.descripcion, tipo:'PR', segmento:'props', medio:'img', en_copia:true, w:x.w, h:x.h, mockup:true, estante:'props'}); }); } catch(e) {}
+  irModo('plantillas'); render(true);
+  // formatos · capas · Karen
+  $('formatos').onclick = function(e){ var b = e.target.closest('.fm'); if(b) irFormato(b.dataset.id); else if(e.target.closest('.q')) pasoFormato(e.target.textContent === 'Q' ? -1 : 1); };
+  function pasoFormato(d){ var fs = formatosDe(), i = fs.indexOf(ARBOL.data.formato.id); irFormato(fs[(i + d + fs.length) % fs.length]); }
+  $('capas').onclick = $('capasHoja').onclick = function(e){ var b = e.target.closest('.it'); if(b){ seleccionar(+b.dataset.nid); if(TEL.matches && ESTADO.capa) abrirHoja('ficha'); } };
+  function culpable(i){ var k = KAREN[i]; if(k && k.capas.length){ ESTADO.capa = null; seleccionar(k.capas[0]); } else if(k) aviso('<b>' + k.ley + '</b> · ' + esc(k.nombre) + (k.detalle ? ' — ' + esc(k.detalle) : ' · pasa')); }
+  $('segs').onclick = function(e){ var b = e.target.closest('button'); if(b) culpable(+b.dataset.i); };
+  $('fallas').onclick = $('fallasHoja').onclick = function(e){ var b = e.target.closest('.falla'); if(b){ culpable(+b.dataset.i); if(TEL.matches) abrirHoja('ficha'); } };
+  // ficha editable
+  $('ficha').addEventListener('input', editarFicha); $('ficha').addEventListener('change', editarFicha);
+  $('ficha').addEventListener('click', function(e){ var b = e.target.closest('[data-op]'); if(b && !b.disabled) operar(b.dataset.op); });
+  // inventario
+  $('estantes').onclick = function(e){ var b = e.target.closest('.est'); if(!b) return; ESTADO.estante = b.dataset.e; ESTADO.busca = ''; $('busca').value = ''; pintarEstantes(); pintarRejas(); };
+  $('busca').oninput = function(){ ESTADO.busca = this.value; pintarRejas(); };
+  var PL_T = 0, PL_I = -1;
+  $('rejas').onclick = function(e){ var b = e.target.closest('.tile'); if(!b) return;
+    if(b.dataset.traer){ $('traerImagen').click(); return; }
+    if(b.dataset.pl != null){ var p = plantillas()[+b.dataset.pl];
+      if(ESTADO.editado && (PL_I !== +b.dataset.pl || Date.now() - PL_T > 4000)){ PL_I = +b.dataset.pl; PL_T = Date.now();
+        aviso('Tu diseño tiene cambios: <b>guárdalo (G)</b> o toca otra vez la plantilla para abrirla encima.'); return; }
+      abrirPlantilla(p.receta, p.datos, ARBOL.data.formato.id); cerrarHojas(); pasos(2, 1); return; }
+    if(b.dataset.mock){ ventanaMockup(); return; }
+    var x = CAT.filter(function(i){ return i.id === b.dataset.id; })[0]; if(x) ventanaActivo(x); };
+  // E19 · la columna: modos, textos, tipografías
+  $('modos').onclick = function(e){ var b = e.target.closest('[data-modo]'); if(b) irModo(b.dataset.modo); };
+  $('textos').onclick = function(e){ var b = e.target.closest('button'); if(!b) return;
+    if(b.id === 'bSubirFuente'){ $('subirFuente').click(); return; }
+    if(b.dataset.estilo){ onda(b, e); agregarTexto(b.dataset.estilo); return; }
+    if(b.dataset.fuente) usarFuente(b.dataset.fuente); };
+  $('subirFuente').onchange = function(){ if(this.files[0]) subirFuente(this.files[0]); this.value = ''; };
+  $('zProf').oninput = function(){ ponerZ(+this.value); };
+  $('kTop').onclick = function(){ if(!TEL.matches) $('karenBox').classList.toggle('abre'); };
+  // arrastrar de la columna a la pieza (imágenes, props y estilos de texto)
+  $('zInventario').addEventListener('dragstart', function(e){ var t = e.target.closest('[draggable=true]'); if(!t) return;
+    e.dataTransfer.setData('text/plain', t.dataset.id ? 'id:' + t.dataset.id : 'estilo:' + t.dataset.estilo); e.dataTransfer.effectAllowed = 'copy'; });
+  var mesa = $('mesa');
+  mesa.addEventListener('dragover', function(e){ e.preventDefault(); mesa.classList.add('suelta'); });
+  mesa.addEventListener('dragleave', function(e){ if(!mesa.contains(e.relatedTarget)) mesa.classList.remove('suelta'); });
+  mesa.addEventListener('drop', function(e){ e.preventDefault(); mesa.classList.remove('suelta'); var d = e.dataTransfer.getData('text/plain') || '', r = $('pila').getBoundingClientRect();
+    var en = [clamp((e.clientX - r.left) / r.width, 0, 1), clamp((e.clientY - r.top) / r.height, 0, 1)];
+    if(e.dataTransfer.files && e.dataTransfer.files[0] && !d){ traerImagen(e.dataTransfer.files[0]); return; }
+    if(d.indexOf('id:') === 0){ var x = CAT.filter(function(i){ return i.id === d.slice(3); })[0]; if(x && !porque(x)) ponerActivo(x.id, null, null, null, null, en); }
+    else if(d.indexOf('estilo:') === 0) agregarTexto(d.slice(7), en); });
+  // la columna como ventana flotante (⧉): se arrastra por su cabeza
+  $('bFlotar').onclick = function(){ var inv = $('zInventario'); inv.classList.toggle('flota'); aviso(inv.classList.contains('flota') ? 'La columna flota: muévela por su cabeza; ⧉ la regresa.' : 'La columna volvió a su lugar.', true); };
+  (function(){ var cab = $('invCab'), g = null;
+    cab.addEventListener('pointerdown', function(e){ var inv = $('zInventario'); if(!inv.classList.contains('flota') || e.target.closest('button')) return;
+      var r = inv.getBoundingClientRect(); g = {dx:e.clientX - r.left, dy:e.clientY - r.top}; cab.setPointerCapture(e.pointerId); });
+    cab.addEventListener('pointermove', function(e){ if(!g) return; var inv = $('zInventario');
+      inv.style.setProperty('--fx', clamp(e.clientX - g.dx, 0, innerWidth - 120) + 'px'); inv.style.setProperty('--fy', clamp(e.clientY - g.dy, 0, innerHeight - 60) + 'px'); });
+    cab.addEventListener('pointerup', function(){ g = null; }); })();
+  $('traerImagen').onchange = function(){ if(this.files[0]) traerImagen(this.files[0]); this.value = ''; };
+  $('abrirArchivo').onchange = function(){ var f = this.files[0]; this.value = ''; if(!f) return; var fr = new FileReader(); fr.onload = function(){ abrirDiseno(fr.result, f.name); }; fr.readAsText(f); };
+  // dique y hojas
+  $('dique').onclick = function(e){ var b = e.target.closest('button'); if(!b) return; var h = $(b.dataset.hoja); if(h.classList.contains('abierta')) cerrarHojas(); else abrirHoja(b.dataset.hoja); };
+  document.addEventListener('click', function(e){ if(e.target.closest('[data-cierra]')) cerrarHojas(); });
+  $('bExpl').onclick = function(e){ onda(this, e); modo(!ESTADO.explotada); };
+  $('pasos').onclick = function(e){ var b = e.target.closest('[data-paso]'); if(b) irPaso(+b.dataset.paso); };
+  pasos(1);
+  function play(){ cancelAnimationFrame(anim); var t0 = performance.now(); if(REDUCIDO){ tiempo(1); return; }
+    (function paso(ahora){ var t = Math.min(1, (ahora - t0) / 1800); tiempo(t); if(t < 1) anim = requestAnimationFrame(paso); })(t0); }
+  $('bPlay').onclick = play;
+  var pista = $('pista'), arrastra = false;
+  function desdeX(e){ var r2 = pista.getBoundingClientRect(); cancelAnimationFrame(anim); tiempo(Math.max(0, Math.min(1, (e.clientX - r2.left) / r2.width))); }
+  pista.onpointerdown = function(e){ arrastra = true; pista.setPointerCapture(e.pointerId); desdeX(e); };
+  pista.onpointermove = function(e){ if(arrastra) desdeX(e); }; pista.onpointerup = function(){ arrastra = false; };
+  $('bPng').onclick = function(e){ if(this.getAttribute('aria-disabled') === 'true'){ aviso('<b>NO SALE</b> · ' + esc(this.title) + ' — corrige la capa, la ficha o el formato.'); return; }
+    onda(this, e); var x = exportarArbol(ARBOL);
+    if(!x.png){ aviso('<b>NO SALE</b> · el navegador no deja leer las imágenes del DAM abiertas como archivo: abre la casa con abrir.bat (localhost) para exportar.'); return; }
+    bajar(nombreDe(ARBOL) + '.png', x.png); listo(this); pasos(3, 3); };
+  $('bArbol').onclick = function(e){ onda(this, e); bajar(nombreDe(ARBOL) + '.arbol.json', URL.createObjectURL(new Blob([JSON.stringify(ARBOL, null, 1)], {type:'application/json'}))); listo(this); };
+  $('bTodo').onclick = function(e){ onda(this, e); lote(); };
+  $('bGuardar').onclick = function(e){ onda(this, e); ventanaGuardar(); };
+  $('bAbrir').onclick = function(e){ onda(this, e); $('abrirArchivo').click(); };
+  $('bTexto').onclick = function(e){ onda(this, e); agregarTexto(); };
+  $('velo').onclick = function(e){ if(e.target === this) cerrar(); };
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && e.target.matches('input,textarea,select') && !$('velo').classList.contains('on')){ e.target.blur(); cerrarHojas(); return; }
+    if(e.target.matches('input,textarea,select') || e.ctrlKey || e.metaKey || e.altKey) return;
+    if((e.key === 'Enter' || e.key === ' ') && e.target.closest('button,a')) return;
+    var k = e.key.toLowerCase(), sel = ESTADO.capa && capaPorNid(ESTADO.capa);
+    if(e.key === 'Escape'){ if($('velo').classList.contains('on')) cerrar(); else if(document.querySelector('.hoja.abierta')) cerrarHojas(); else if(ESTADO.capa) seleccionar(ESTADO.capa); }
+    else if($('velo').classList.contains('on')) return;
+    else if(e.shiftKey && sel && sel.role !== 'fondo' && /^Arrow/.test(e.key)){ e.preventDefault(); var c = sel.data.caja, d = 0.01;
+      if(e.key === 'ArrowLeft') c[0] = r3(clamp(c[0] - d, 0, 1 - c[2])); if(e.key === 'ArrowRight') c[0] = r3(clamp(c[0] + d, 0, 1 - c[2]));
+      if(e.key === 'ArrowUp') c[1] = r3(clamp(c[1] - d, 0, 1 - c[3])); if(e.key === 'ArrowDown') c[1] = r3(clamp(c[1] + d, 0, 1 - c[3]));
+      ESTADO.editado = true; refrescar(); }
+    else if(e.key === 'ArrowRight' || e.key === 'ArrowLeft'){ e.preventDefault(); var cs = ARBOL.children.slice().sort(function(a, b){ return b.data.z - a.data.z; }),
+      j = cs.findIndex(function(n){ return n.nid === ESTADO.capa; }), dd = e.key === 'ArrowRight' ? 1 : -1;
+      ESTADO.capa = cs[j < 0 ? (dd > 0 ? 0 : cs.length - 1) : (j + dd + cs.length) % cs.length].nid; marcarSeleccion(); }
+    else if((e.key === 'Delete' || e.key === 'Backspace') && sel && sel.role !== 'fondo'){ e.preventDefault(); operar('quitar'); }
+    else if(e.key === ']') operar('subir'); else if(e.key === '[') operar('bajar'); else if(k === 'd' && sel) operar('duplicar');
+    else if(/^[1-9]$/.test(e.key) && formatosDe()[+e.key - 1]) irFormato(formatosDe()[+e.key - 1]);
+    else if(k === 'q') pasoFormato(-1); else if(k === 'r') pasoFormato(1);
+    else if(k === 'e') modo(!ESTADO.explotada);
+    else if(k === 't') agregarTexto();
+    else if(k === 'g') ventanaGuardar(); else if(k === 'o') $('abrirArchivo').click();
+    else if(e.key === ' '){ e.preventDefault(); play(); }
+    else if(e.key === 'Enter'){ e.preventDefault(); $('bPng').click(); }
+    else if(k === 'l') lote(); else if(k === 'j') $('bArbol').click();
+    else if(e.key === 'Backspace'){ e.preventDefault(); location.href = $('aRueda').href; }
+  });
+  var rz; window.addEventListener('resize', function(){ clearTimeout(rz); rz = setTimeout(function(){ if(!TEL.matches) cerrarHojas(); montarPila(); marcarSeleccion(); pintarKaren(); }, 120); });
+}
+window.COMPOSER = {construirArbol:construirArbol, pintar:pintar, karen:karen, exportarPNG:exportarPNG, exportarArbol:exportarArbol, semilla:function(){ return S; },
+  arbol:function(){ return ARBOL; }, estado:function(){ return ESTADO; }, catalogo:function(){ return CAT; }, estanteDe:estanteDe, lamina:function(){ return LAM; },
+  ponerActivo:ponerActivo, abrirPlantilla:abrirPlantilla, irModo:irModo, agregarTexto:agregarTexto, ventanaMockup:ventanaMockup, mockupPNG:mockupPNG,
+  guardarMockupProp:guardarMockupProp, cargarFuente:cargarFuente, fuentes:function(){ return FUENTES; }, ponerZ:ponerZ, diseno:function(p){ return diseno(p).json; }, abrirDiseno:abrirDiseno, karenAhora:function(){ return KAREN; },
+  vista:function(o){ if(o.formato) irFormato(o.formato); if('explotada' in o) modo(o.explotada);
+    if(o.capa === null){ ESTADO.capa = null; marcarSeleccion(); } if(o.capa != null){ ESTADO.capa = ARBOL.children[o.capa].nid; marcarSeleccion(); } if(o.t != null) tiempo(o.t); if(o.lote) lote(); }};
+
+// el catálogo: con rama (construir_composer.py) llega medido; sin rama sale de os_semilla.dam tal cual (sin saber qué hay en disco)
+function catalogo(lista){ return lista.map(function(x){ x.nombre = x.nombre || x.nomenclatura || x.id; x.medio = x.medio || 'img'; x.estante = estanteDe(x); return x; }); }
+function arrancar(){ montar(); window.COMPOSER.listo = true; }
+if(RAMA && RAMA.semilla){
+  S = RAMA.semilla; LAM = RAMA.lamina || null; BASE = RAMA.base || '../'; CAT = catalogo(RAMA.catalogo || []); arrancar();
+} else {
+  BASE = baseSemilla();
+  fetch(CRUCE.fuente.ruta, {cache:'no-store'}).then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(j){ S = j; CAT = catalogo(filas('dam').filter(function(x){ return x.ruta || x.magnific_id; }).map(function(x){ var y = clonar(x); y.en_copia = !!x.ruta; return y; })); arrancar(); })
+    .catch(function(){ $('vacio').innerHTML = '<div>No pude leer la semilla (' + esc(CRUCE.fuente.ruta) + ').<br>Ábrela con <b>abrir.bat</b> (servidor de la casa) o elige el archivo a mano:<br><input type="file" accept=".json" id="manual"></div>';
+      var inp = $('manual'); if(inp) inp.onchange = function(){ var fr = new FileReader(); fr.onload = function(){ S = JSON.parse(fr.result); CAT = catalogo(filas('dam').map(clonar)); arrancar(); }; fr.readAsText(this.files[0]); }; });
+}
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,122 @@
+{
+ "tipo": "lyon_spark.composer.diseno",
+ "version": 1,
+ "nombre": "ejemplo · panadería ficticia",
+ "arbol": {
+  "tag": "pieza",
+  "data": {
+   "formato": {
+    "id": "sq",
+    "w": 1080,
+    "h": 1080
+   },
+   "receta": "RC-MENSAJE-MASCOTA",
+   "datos": "EJEMPLO",
+   "modulo": "MC-MENSAJE-MASCOTA"
+  },
+  "children": [
+   {
+    "tag": "capa",
+    "nid": "c1",
+    "role": "fondo",
+    "data": {
+     "modulo": "MC-FONDO-SOLIDO",
+     "z": 0,
+     "caja": [
+      0,
+      0,
+      1,
+      1
+     ],
+     "campos": {
+      "color": "#0B2A6E"
+     }
+    },
+    "children": []
+   },
+   {
+    "tag": "capa",
+    "nid": "c2",
+    "role": "capa",
+    "data": {
+     "modulo": "MC-MASCOTA",
+     "z": 20,
+     "caja": [
+      0.06,
+      0.34,
+      0.36,
+      0.48
+     ],
+     "campos": {
+      "color": "#FFD23F",
+      "ruta": ""
+     }
+    },
+    "children": []
+   },
+   {
+    "tag": "capa",
+    "nid": "c3",
+    "role": "capa",
+    "data": {
+     "modulo": "MC-GLOBO-TEXTO",
+     "z": 30,
+     "caja": [
+      0.46,
+      0.22,
+      0.48,
+      0.3
+     ],
+     "campos": {
+      "texto": "Pan recién hecho, aquí enfrente.",
+      "color_globo": "#FFFFFF",
+      "color_texto": "#0D1B3E"
+     }
+    },
+    "children": []
+   },
+   {
+    "tag": "capa",
+    "nid": "c4",
+    "role": "capa",
+    "data": {
+     "modulo": "MC-FIRMA-MARCA",
+     "z": 40,
+     "caja": [
+      0.1,
+      0.88,
+      0.8,
+      0.07
+     ],
+     "campos": {
+      "nombre": "PANADERÍA DE EJEMPLO",
+      "color": "#FFFFFF"
+     }
+    },
+    "children": []
+   },
+   {
+    "tag": "capa",
+    "nid": "c5",
+    "role": "capa",
+    "data": {
+     "modulo": "MC-TEXTO",
+     "z": 50,
+     "caja": [
+      0.1,
+      0.06,
+      0.8,
+      0.12
+     ],
+     "campos": {
+      "texto": "HOY",
+      "tam": 0.09,
+      "color": "#FFD23F",
+      "peso": "900"
+     }
+    },
+    "children": []
+   }
+  ]
+ }
+}
