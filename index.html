@@ -589,7 +589,11 @@ function nuevaCapa(modulo, campos, caja){
   var m = porId('modulos_codigo', modulo); if(!m) { aviso('<b>NO</b> · el registro no trae ' + esc(modulo) + '.'); return null; }
   var n = {tag:'capa', text:'', role:m.tipo, classes:[], attrs:{}, nid:sigNid(ARBOL),
     data:{modulo:m.id, alefato:m.alefato || '', z:zArriba(ARBOL), caja:caja.map(r3), choca:!!m.choca, zona:!!m.zona, campos:campos}};
-  ARBOL.children.push(n); return n;
+  ARBOL.children.push(n);
+  if(!/^MC-(TEXTO|GLOBO-TEXTO|FIRMA-MARCA)$/.test(m.id)){ var orden = zCapas().filter(function(x){ return x !== n; }),
+    t = orden.findIndex(function(x){ return /^MC-(TEXTO|GLOBO-TEXTO|FIRMA-MARCA)$/.test(x.data.modulo); });
+    if(t >= 0){ orden.splice(t, 0, n); orden.forEach(function(x, j){ x.data.z = (j + 1)*10; }); } }
+  return n;
 }
 
 // ── 2 · UN SOLO RENDER (vista, capas en Z y exportación) ────────────────────
@@ -929,7 +933,7 @@ function ficha(){
   var puedeImg = n.data.modulo === 'MC-IMAGEN' || n.data.modulo === 'MC-MASCOTA' || n.data.modulo === 'MC-MOCKUP';
   cont.innerHTML = CERRAR_FICHA + '<div class="tag"><span class="g">' + (m.alefato || '·') + '</span>CAPA Z' + n.data.z + ' · ' + esc(m.tipo).toUpperCase() + '</div>' +
     '<h2>' + esc(m.nombre) + '</h2><p>' + esc(m.lectura_b) + '</p>' +
-    (fondo ? '' : '<div class="ops"><button data-op="subir"' + (i >= orden.length - 1 ? ' disabled' : '') + '>Subir ▲</button><button data-op="bajar"' + (i <= 1 ? ' disabled' : '') + '>Bajar ▼</button>' +
+    (fondo ? '' : '<div class="ops"><button data-op="frente" title="Hasta el frente (Shift+])"' + (i >= orden.length - 1 ? ' disabled' : '') + '>Al frente ⤒</button><button data-op="subir" title="Subir uno (])"' + (i >= orden.length - 1 ? ' disabled' : '') + '>Subir ▲</button><button data-op="bajar" title="Bajar uno ([)"' + (i <= 1 ? ' disabled' : '') + '>Bajar ▼</button><button data-op="fondo" title="Hasta el fondo, encima del fondo (Shift+[)"' + (i <= 1 ? ' disabled' : '') + '>Al fondo ⤓</button>' +
       '<button data-op="duplicar">Duplicar</button>' + (puedeImg ? '<button data-op="cambiar">Cambiar imagen</button>' : '') + (n.data.modulo === 'MC-MOCKUP' ? '<button data-op="prop">Guardar como prop</button>' : '') + '<button data-op="quitar" class="quita">Quitar</button></div>') +
     campos +
     (fondo ? '' : '<label class="chk"><input type="checkbox" data-b="choca"' + (n.data.choca ? ' checked' : '') + '> choca (entra a LC-NOCHOQUE)</label>' +
@@ -954,6 +958,8 @@ function operar(op){
   var orden = ARBOL.children.slice().sort(function(x, y){ return x.data.z - y.data.z; }), i = orden.indexOf(n);
   if(op === 'subir' && i < orden.length - 1){ var o = orden[i + 1], z = o.data.z; o.data.z = n.data.z; n.data.z = z; }
   else if(op === 'bajar' && i > 1){ var u = orden[i - 1], z2 = u.data.z; u.data.z = n.data.z; n.data.z = z2; }
+  else if(op === 'frente' || op === 'fondo'){ var resto = zCapas().filter(function(x){ return x !== n; });   // 19 oct · como Photoshop: hasta arriba / hasta abajo (el fondo no se mueve)
+    if(op === 'frente') resto.push(n); else resto.unshift(n); resto.forEach(function(x, j){ x.data.z = (j + 1)*10; }); }
   else if(op === 'duplicar'){ var d = clonar(n); d.nid = sigNid(ARBOL); d.data.z = zArriba(ARBOL); var c = d.data.caja;
     d.data.caja = [r3(clamp(c[0] + .03, 0, 1 - c[2])), r3(clamp(c[1] + .03, 0, 1 - c[3])), c[2], c[3]]; ARBOL.children.push(d); ESTADO.capa = d.nid; }
   else if(op === 'quitar'){ ARBOL.children.splice(ARBOL.children.indexOf(n), 1); ESTADO.capa = null; }
@@ -1019,7 +1025,7 @@ function refrescar(sinFicha){
 function abrirPlantilla(recetaId, datosId, formatoId){
   var r = porId('recetas_composer', recetaId); if(!r) return;
   var f = formatoId && r.formatos.indexOf(formatoId) >= 0 ? formatoId : r.formatos[0];
-  ARBOL = construirArbol(recetaId, datosId, f); ESTADO.editado = false; ESTADO.capa = null; ESTADO.nombre = '';
+  ARBOL = construirArbol(recetaId, datosId, f); ESTADO.editado = false; ESTADO.capa = null; ESTADO.nombre = ''; HIST = []; FUT = [];
   render(true);
 }
 function irFormato(id){
@@ -1277,7 +1283,7 @@ function validar(j){
 function abrirDiseno(texto, origen){
   var j; try { j = JSON.parse(texto); } catch(e) { aviso('<b>NO SE ABRE</b> · el archivo no es JSON.'); return false; }
   var v = validar(j); if(v.error){ aviso('<b>NO SE ABRE</b> · ' + esc(v.error) + '.'); return false; }
-  ARBOL = v.arbol; NID = sigNid(ARBOL); ESTADO.nombre = v.nombre; ESTADO.editado = v.editado; ESTADO.capa = null;
+  ARBOL = v.arbol; NID = sigNid(ARBOL); HIST = []; FUT = []; ESTADO.nombre = v.nombre; ESTADO.editado = v.editado; ESTADO.capa = null;
   var faltaF = [];
   (ARBOL.data.fuentes || []).forEach(function(f){ if(FUENTES[f.familia]) return;
     if(f.data) cargarFuente(f.familia, f.data).then(function(){ guardarFuentes(); refrescar(true); }).catch(function(){}); else faltaF.push(f.familia); });
@@ -1287,7 +1293,14 @@ function abrirDiseno(texto, origen){
   aviso('Abierto' + (origen ? ' (' + esc(origen) + ')' : '') + ': <b>' + esc(ESTADO.nombre || ARBOL.data.titulo || '') + '</b> · Karen: ' + (k ? k + ' regla(s) frenan' : 'puede salir'), !k);
   return true;
 }
-function autoguardar(){ try { localStorage.setItem(LLAVE, JSON.stringify(diseno(false).json)); } catch(e) {} }
+var HIST = [], FUT = [], VOLVIENDO = false;
+function historia(){ if(VOLVIENDO) return; var s = JSON.stringify(ARBOL); if(HIST[HIST.length - 1] === s) return;
+  HIST.push(s); if(HIST.length > 80) HIST.shift(); FUT = []; }
+function volver(atras){ var de = atras ? HIST : FUT, a = atras ? FUT : HIST; if(atras ? HIST.length < 2 : !FUT.length){ aviso(atras ? 'No hay más para deshacer.' : 'No hay nada para rehacer.'); return; }
+  a.push(de.pop()); var s = atras ? HIST[HIST.length - 1] : a[a.length - 1];
+  VOLVIENDO = true; try { ARBOL = JSON.parse(s); NID = sigNid(ARBOL); ESTADO.editado = true; if(ESTADO.capa && !capaPorNid(ESTADO.capa)) ESTADO.capa = null; render(false); ficha(); } finally { VOLVIENDO = false; }
+  aviso(atras ? 'Deshecho (Ctrl+Z)' : 'Rehecho (Ctrl+Shift+Z)', true); }
+function autoguardar(){ historia(); try { localStorage.setItem(LLAVE, JSON.stringify(diseno(false).json)); } catch(e) {} }
 function ultimo(){ try { var t = localStorage.getItem(LLAVE); return t ? JSON.parse(t) : null; } catch(e) { return null; } }
 function ventanaGuardar(){
   var v = $('ventana'), u = ultimo(); v.className = 'ventana chica guardar';
@@ -1443,6 +1456,8 @@ function montar(){
   $('velo').onclick = function(e){ if(e.target === this) cerrar(); };
   document.addEventListener('keydown', function(e){
     if(e.key === 'Escape' && e.target.matches('input,textarea,select') && !$('velo').classList.contains('on')){ e.target.blur(); cerrarHojas(); return; }
+    if((e.ctrlKey || e.metaKey) && !e.altKey && !e.target.matches('input,textarea,select') && !$('velo').classList.contains('on')){
+      var kk = e.key.toLowerCase(); if(kk === 'z'){ e.preventDefault(); volver(!e.shiftKey); return; } if(kk === 'y'){ e.preventDefault(); volver(false); return; } }
     if(e.target.matches('input,textarea,select') || e.ctrlKey || e.metaKey || e.altKey) return;
     if((e.key === 'Enter' || e.key === ' ') && e.target.closest('button,a')) return;
     var k = e.key.toLowerCase(), sel = ESTADO.capa && capaPorNid(ESTADO.capa);
@@ -1456,6 +1471,7 @@ function montar(){
       j = cs.findIndex(function(n){ return n.nid === ESTADO.capa; }), dd = e.key === 'ArrowRight' ? 1 : -1;
       ESTADO.capa = cs[j < 0 ? (dd > 0 ? 0 : cs.length - 1) : (j + dd + cs.length) % cs.length].nid; marcarSeleccion(); }
     else if((e.key === 'Delete' || e.key === 'Backspace') && sel && sel.role !== 'fondo'){ e.preventDefault(); operar('quitar'); }
+    else if(e.key === '}' || (e.key === ']' && e.shiftKey)) operar('frente'); else if(e.key === '{' || (e.key === '[' && e.shiftKey)) operar('fondo');
     else if(e.key === ']') operar('subir'); else if(e.key === '[') operar('bajar'); else if(k === 'd' && sel) operar('duplicar');
     else if(/^[1-9]$/.test(e.key) && formatosDe()[+e.key - 1]) irFormato(formatosDe()[+e.key - 1]);
     else if(k === 'q') pasoFormato(-1); else if(k === 'r') pasoFormato(1);
@@ -1472,7 +1488,7 @@ function montar(){
 window.COMPOSER = {construirArbol:construirArbol, pintar:pintar, karen:karen, exportarPNG:exportarPNG, exportarArbol:exportarArbol, semilla:function(){ return S; },
   arbol:function(){ return ARBOL; }, estado:function(){ return ESTADO; }, catalogo:function(){ return CAT; }, estanteDe:estanteDe, lamina:function(){ return LAM; },
   ponerActivo:ponerActivo, abrirPlantilla:abrirPlantilla, irModo:irModo, agregarTexto:agregarTexto, ventanaMockup:ventanaMockup, mockupPNG:mockupPNG,
-  guardarMockupProp:guardarMockupProp, cargarFuente:cargarFuente, fuentes:function(){ return FUENTES; }, ponerZ:ponerZ, diseno:function(p){ return diseno(p).json; }, abrirDiseno:abrirDiseno, karenAhora:function(){ return KAREN; },
+  guardarMockupProp:guardarMockupProp, cargarFuente:cargarFuente, fuentes:function(){ return FUENTES; }, ponerZ:ponerZ, diseno:function(p){ return diseno(p).json; }, abrirDiseno:abrirDiseno, deshacer:function(){ volver(true); }, rehacer:function(){ volver(false); }, operar:operar, karenAhora:function(){ return KAREN; },
   vista:function(o){ if(o.formato) irFormato(o.formato); if('explotada' in o) modo(o.explotada);
     if(o.capa === null){ ESTADO.capa = null; marcarSeleccion(); } if(o.capa != null){ ESTADO.capa = ARBOL.children[o.capa].nid; marcarSeleccion(); } if(o.t != null) tiempo(o.t); if(o.lote) lote(); }};
 
